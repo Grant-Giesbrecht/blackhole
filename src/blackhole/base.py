@@ -57,6 +57,10 @@ class BHControlState:
 		# Dictionary of parameters controlled/monitored by the widgets
 		self._parameters = {}
 	
+	def add_param(self, param:str, val):
+		self.log.debug(f"Creating >:q{param}< with initial value >:a{val}<.")
+		self._parameters[param] = val
+	
 	def get_param(self, param:str):
 		return self._parameters[param]
 	

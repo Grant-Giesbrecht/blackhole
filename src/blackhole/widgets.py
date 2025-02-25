@@ -34,6 +34,8 @@ class BHPlotWidget(bh.BHListenerWidget):
 		self.grid.addWidget(self.fig_canvas, 1, 0)
 		
 		self.setLayout(self.grid)
+		
+		self._render_widget()
 	
 	def _render_widget(self):
 		
@@ -50,12 +52,16 @@ class BHPlotWidget(bh.BHListenerWidget):
 
 class BHSliderWidget(bh.BHControllerWidget):
 	
-	def __init__(self, main_window, param, header_label:str="", initial_val:float=0, unit_label:str="", step:float=None, min:float=None, max:float=None, tick_step:float=None):
+	def __init__(self, main_window, param, header_label:str="", initial_val:float=None, unit_label:str="", step:float=None, min:float=None, max:float=None, tick_step:float=None):
 		super().__init__(main_window)
 		
 		# This is the parameter which the slider will control
 		self.control_parameter = param
 		self.unit_label = unit_label
+		
+		# Get initial value from controls
+		if initial_val is None:
+			initial_val = self.main_window.control_requested.get_param(param)
 		
 		val0 = initial_val
 		
