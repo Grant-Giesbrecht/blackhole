@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "black-hole-gui"
+version = "0.0.0.dev1"
+authors = [
+  { name="Grant Giesbrecht", email="grant.giesbrecht@colorado.edu" },
+]
+description = "A framework for creating data analysis GUIs that absorb all data within their event horizon."
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+  	'matplotlib >= 3.9.0',
+]
+
+
+[project.urls]
+Homepage = "https://github.com/Grant-Giesbrecht/blackhole"
+Issues = "https://github.com/Grant-Giesbrecht/blackhole/issues"
