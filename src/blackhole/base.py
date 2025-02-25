@@ -51,16 +51,35 @@ class BHControlState:
 		
 		self.log = log
 
-class DataSource():
+class BHDataSource():
 	''' Class representing a data source. It only specified where to find the
 	data, and parameters/conditions for the data. It does not contain
 	the actual data itself.'''
 	
-	def __init__(self, filename:str, params:dict, valid_idx):
+	def __init__(self, filename:str, params:dict, valid_idx, unique_id):
 		self.file_fullpath = filename
 		self.file_name = os.path.basename(filename)
 		self.parameters = params
 		self.valid_active_set_indices = []
+		
+		self.unique_id = unique_id
+
+class BHDataset():
+	''' Represents the data contained in a single file or dataset. This class will
+	be extended by the end user to perform calculations on the data. It will also
+	contain a state machine (ControlState instance) to track what has been done
+	to the data vs what was requested by the user.
+	
+	This class will likely need to be inherited by the end user so they can customize
+	how the data is loaded.
+	'''
+	
+	def __init__(self, log, unique_id):
+		
+		# Describes the ControlState that has acted on the data
+		self.control_performed = BHControlState(log)
+		self.log = log
+		self.unique_id = unique_id
 
 class DataFilterLayer():
 	
@@ -69,7 +88,7 @@ class DataFilterLayer():
 		# This is the (0-based) count for filtering order
 		self.layer_idx = layer_idx
 		
-		# These are the DataSource parameters that will be filtered in this layer. The
+		# These are the BHDataSource parameters that will be filtered in this layer. The
 		# list can contain 1+ elements.
 		self.group_parameters = group_parameters
 		
@@ -85,7 +104,7 @@ class BHDatasetManager():
 	everything else.
 	'''
 	
-	def __init__(self, log):
+	def __init__(self, log, load_function):
 		self.log = log
 		
 		# List of parameters expected in each file config specification
@@ -94,12 +113,19 @@ class BHDatasetManager():
 		# Abbreviations from the conf file.
 		self.abbrevs = {}
 		
+		self.loaded_data = []
+		self.active_datasets = {} # Stores index (for loaded_data) of the active dataset. Key = slot #
+		
 		# List of dictionaries defining the various data sources specified by the
 		# conf file.
 		self.sources_info = []
 		
 		# How the data selector widget should be arranged
 		self.org_structure = []
+		
+		# Function (written by end user) to create a dataset. Will be given a 
+		# BHDataSource object and LogPile and should return a BHDataset-derived class instance.
+		self.load_function = load_function
 	
 	def load_configuration(self, filename:str=None, filepath:list=None, user_abbrevs:dict={}):
 		''' Reads a configuration file in JSON format that defines the data sources
@@ -144,13 +170,14 @@ class BHDatasetManager():
 				short = ab['shortcut']
 				val = ab['expanded']
 				self.abbrevs[short] = val
-				self.log.lowdebug(f"Adding abbreviation from file: {short} -> {val}")
+				self.log.lowdebug(f"Adding abbreviation from file: >:a{short}< -\> >{val}<")
 		except Exception as e:
 			self.log.critical(f"Failed to load BHDatasetManager configuration file >dir_abbrev< section.", detail=f"{e}")
 			return False
 		
 		# Read data_sources
 		first_iter = True
+		next_unique_id = 0
 		try:
 			
 			for idx, srcdict in enumerate(data_conf['data_sources']):
@@ -178,9 +205,10 @@ class BHDatasetManager():
 					
 					params[efp] = srcdict['parameters'][efp]
 				
-				# Save datasource
-				self.log.lowdebug(f"Adding datasource from file: {short} -> {val}")
-				self.sources_info.append( DataSource(file, params, srcdict['valid_active_set_indices']) )
+				# Save BHDataSource
+				self.log.lowdebug(f"Adding BHDataSource from file: >:a{file}<")
+				self.sources_info.append( BHDataSource(file, params, srcdict['valid_active_set_indices'], next_unique_id) )
+				next_unique_id += 1
 				
 		except Exception as e:
 			self.log.critical(f"Failed to load BHDatasetManager configuration file >data_sources< section.", detail=f"{e}")
@@ -196,7 +224,40 @@ class BHDatasetManager():
 			self.log.critical(f"Failed to load BHDatasetManager configuration file >organization_structure< section.", detail=f"{e}")
 			return False
 		
+		# Check that all layer numbers appear and exactly once
+		for i in range(len(self.org_structure)):
+			
+			found = 0
+			for org in self.org_structure:
+				if (org.layer_idx == i):
+					found += 1
+			if found != 1:
+				self.log.critical(f"BHDatasetManager configuration file has {found} layers at level {i}. Must be exactly 1.")
+				return False
+		
 		return True
+	
+	def set_active_dataset(self, unique_id:int, dataset_slot:int=1):
+		''' Sets the active dataset, loading it from file if required.
+		'''
+		
+		# Look for data already loaded
+		for idx, ds in enumerate(self.loaded_data):
+			if ds.unique_id == unique_id:
+				self.active_datasets[dataset_slot] = idx
+				return True
+		
+		# Else check unlaoded data
+		for ulds in self.sources_info:
+			# Found config
+			if ulds.unique_id == unique_id:
+				# Load data
+				self.loaded_data.append(self.load_function(ulds, self.log))
+				self.log.info(f"Loaded dataset with unique_id >{unique_id}<.")
+				return True
+		
+		self.log.error(f"Failed to find dataset with unique_id {unique_id}")
+		return False
 	
 	def get_data(self, active_index:int=0):
 		''' Returns the active (or selected) dataset. If the end-user application 
@@ -205,21 +266,83 @@ class BHDatasetManager():
 		'''
 		pass
 
-class BHDataset():
-	''' Represents the data contained in a single file or dataset. This class will
-	be extended by the end user to perform calculations on the data. It will also
-	contain a state machine (ControlState instance) to track what has been done
-	to the data vs what was requested by the user.
+class BHDatasetSelectBasicWidget(QWidget):
 	
-	This class will likely need to be inherited by the end user so they can customize
-	how the data is loaded.
-	'''
-	
-	def __init__(self, log):
+	def __init__(self, manager:BHDatasetManager, log):
 		
-		# Describes the ControlState that has acted on the data
-		self.control_performed = BHControlState(log)
+		self.manager = manager
 		self.log = log
+		
+		self.box = QGroupBox()
+		self.grid = QGridLayout()
+		
+		self.select_widget = QListWidget()
+		self.select_widget.setFixedSize(QSize(200, 100))
+		self.select_widget.itemClicked.connect(self.change_file)
+	
+	def change_file(self):
+		
+		filename = self.select_widget.currentItem()
+		if filename is None:
+			self.log.warning(f">:qBHDatasetSelectBasicWidget<.>change_file<() returned early.")
+			return
+		
+		# Change active dataset
+		self.manager.set_active_dataset(filename=filename.text())
+
+# class BHLayerSelectWidget(QGroupBox):
+# 	''' Internal widget to BHDatasetSelectWidget. Acts as a single check box.'''
+	
+# 	def __init__(self, manager:BHDatasetManager, layer_parameter:str):
+		
+# 		self.manager = manager
+# 		self.layer_parameter = layer_parameter
+		
+# 		# Create widget
+# 		self.box = QGroupBox()
+# 		self.grid = QGridLayout()
+		
+# 		# Create list widget
+# 		self.select_widget = QListWidget()
+# 		self.select_widget.setFixedSize(QSize(75, 100))
+# 		# self.select_widget.itemClicked.connect(self.re) # TODO?
+		
+# 	def 
+
+# class BHDatasetSelectWidget(QWidget):
+# 	''' Widget that allows the user to selecet an active dataset for the BHDatasetManager object. Gets
+# 	its configuration info from the BHDatasetManager itself.
+# 	'''
+# 	def __init__(self, manager:BHDatasetManager):
+# 		super().__init__()
+		
+# 		self.manager = manager
+		
+# 		self.layer_select_widgets = []
+	
+# 	def build_gui(self):
+# 		''' Constructs the GUI from the manager config.'''
+		
+# 		# Loop over org layers
+# 		for layer_no in range(len(self.manager.org_structure)):
+			
+# 			for org in self.org_structure:
+# 				if (org.layer_idx == layer_no):
+					
+# 					# Create widget
+# 					layer_box = QGroupBox()
+# 					layer_grid = QGridLayout()
+					
+# 					# Create list widget
+# 					select_widget = BHLayerSelectWidget(self.manager)
+					
+# 					# Add widget to list
+# 					self.layer_select_widgets.append()
+	
+# 	def refilter_layers(self):
+		
+		
+	
 
 class BHMainWindow(QtWidgets.QMainWindow):
 	
