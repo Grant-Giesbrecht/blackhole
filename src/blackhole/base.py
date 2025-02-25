@@ -2,13 +2,12 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 from PyQt6.QtGui import QAction, QActionGroup, QDoubleValidator, QIcon, QFontDatabase, QFont, QPixmap
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtWidgets import QWidget, QTabWidget, QLabel, QGridLayout, QLineEdit, QCheckBox, QSpacerItem, QSizePolicy, QMainWindow, QSlider, QPushButton, QGroupBox, QListWidget, QFileDialog, QProgressBar, QStatusBar
+from abc import abstractmethod
 
 import pylogfile.base as plf
 import numpy as np
 import json
 import os
-
-# from pylogfile.base import *
 
 log = plf.LogPile()
 log.set_terminal_level("DEBUG")
@@ -46,11 +45,84 @@ def expand_path_list(path:list, abbrevs:dict):
 	return os.path.join(*npath)
 
 class BHControlState:
+	''' This class is used to define a state of controls/inputs from the UI. This
+	is used to track both what has been performed on datasets, and what is requested
+	by the UI.
+	'''
 	
 	def __init__(self, log):
 		
 		self.log = log
+		
+		# Dictionary of parameters controlled/monitored by the widgets
+		self.parameters = {}
+	
+	def update_param(self, param:str, val):
+		self.log.debug(f"Parameter >:q{param}< changed to >:a{val}<")
+		self.parameters[param] = val
+	
+	def summarize(self):
+		return f"{self.parameters}"
+	
+class BHListenerWidget(QWidget):
+	''' This class defines a widget which will automatically update to match the
+	BHControlState when neccesary. It's designed to abstract the control system
+	from the user, so making robust controls is simpler.'''
+	
+	def __init__(self, control):
+		super().__init__()
+		self.control_requested = control
+		
+		self.is_current = False
+		self._is_active = True # Indicates if the widget is visible and should be updated (for tabs)
+	
+	def is_active(self):
+		return self._is_active
+	
+	def set_active(self, b:bool):
+		''' Sets the widget as active or inactive '''
+		self._is_active = b
+		self._ensure_current()
+	
+	def _get_update(self):
+		''' Tells the plot that the control state has changed. '''
+		
+		# Set as non-current
+		self.is_current = False
+		
+		# Tell it to re-render if active
+		self._ensure_current()
+	
+	def _ensure_current(self):
+		''' Tells the plot to re-render if out of date '''
+		
+		# Update if active and out of date
+		if self.is_active() and (not self.is_current):
+			self._render_widget()
+	
+	@abstractmethod
+	def _render_widget(self):
+		''' Function responsible for updating the widget to reflect the control state. 
+		Automatically called by _get_update() when plot is active. '''
+		pass
 
+class BHControllerWidget(QWidget):
+	
+	def __init__(self, main_window):
+		super().__init__()
+		# Needs access to the main window to be able to broadcast to all subs
+		self.main_window = main_window
+	
+	@staticmethod
+	def broadcaster(func):
+		''' Decorator to make a function push all changes to the ControlState 
+		to all subscriber BHListenerWidgets. '''
+		
+		def wrapper(self, *args, **kwargs):
+			func(self, *args, **kwargs)
+			self.main_window.broadcast_control_changes()
+		return wrapper
+	
 class BHDataSource():
 	''' Class representing a data source. It only specified where to find the
 	data, and parameters/conditions for the data. It does not contain
@@ -269,16 +341,33 @@ class BHDatasetManager():
 class BHDatasetSelectBasicWidget(QWidget):
 	
 	def __init__(self, manager:BHDatasetManager, log):
+		super().__init__()
 		
 		self.manager = manager
 		self.log = log
 		
-		self.box = QGroupBox()
 		self.grid = QGridLayout()
 		
+		# Create selector widget
 		self.select_widget = QListWidget()
 		self.select_widget.setFixedSize(QSize(200, 100))
 		self.select_widget.itemClicked.connect(self.change_file)
+		
+		# Apply layout
+		self.grid.addWidget(self.select_widget, 0, 0)
+		self.setLayout(self.grid)
+
+		self.update_list()
+		
+	def update_list(self):
+		
+		# Reset list
+		self.select_widget.clear()
+		
+		# Add each element
+		for src in self.manager.sources_info:
+			self.log.lowdebug(f"Added item to select widget: {src.unique_id}")
+			self.select_widget.addItem(f"{src.unique_id}")
 	
 	def change_file(self):
 		
@@ -288,7 +377,8 @@ class BHDatasetSelectBasicWidget(QWidget):
 			return
 		
 		# Change active dataset
-		self.manager.set_active_dataset(filename=filename.text())
+		id = int(filename.text())
+		self.manager.set_active_dataset(id)
 
 # class BHLayerSelectWidget(QGroupBox):
 # 	''' Internal widget to BHDatasetSelectWidget. Acts as a single check box.'''
@@ -355,6 +445,10 @@ class BHMainWindow(QtWidgets.QMainWindow):
 		self.data_manager = data_manager
 		self.control_requested = BHControlState(log)
 		
+		self.control_subscribers = [] # List of widgets to update when changes occur to control state
+		
+		#------------- Make GUI elements ------------------
+		
 		# Apply window title if specified
 		if window_title is not None:
 			self.setWindowTitle(window_title)
@@ -366,6 +460,18 @@ class BHMainWindow(QtWidgets.QMainWindow):
 		central_widget = QtWidgets.QWidget()
 		central_widget.setLayout(self.grid)
 		self.setCentralWidget(central_widget)
+		
+	def add_control_subscriber(self, widget:BHListenerWidget):
+		''' Adds a controlled widget to the subscribers list. These widgets 
+		will be informed when a change has been made to the control state. '''
+		
+		self.control_subscribers.append(widget)
+	
+	def broadcast_control_changes(self):
+		''' Informs all subscribers that the controls have changed '''
+		
+		for sub in self.control_subscribers:
+			sub._get_update()
 	
 	def apply_default_layout(self):
 		pass
