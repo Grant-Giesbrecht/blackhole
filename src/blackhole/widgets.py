@@ -1,3 +1,6 @@
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas, NavigationToolbar2QT
+
 from PyQt6 import QtCore, QtGui, QtWidgets
 from PyQt6.QtGui import QAction, QActionGroup, QDoubleValidator, QIcon, QFontDatabase, QFont, QPixmap
 from PyQt6.QtCore import Qt, QSize
@@ -12,10 +15,37 @@ import blackhole.base as bh
 
 class BHPlotWidget(bh.BHListenerWidget):
 	
-	def __init__(self, control):
+	def __init__(self, control, custom_render_func=None): #, xlabel:str="", ylabel:str="", title:str="", ):
 		super().__init__(control)
+		
+		self.custom_render_func = custom_render_func
+		
+		# Create figure in matplotlib
+		self.fig1 = plt.figure(1)
+		self.gs = self.fig1.add_gridspec(1, 1)
+		self.ax1a = self.fig1.add_subplot(self.gs[0, 0])
+		
+		# Create Qt Figure Canvas
+		self.fig_canvas = FigureCanvas(self.fig1)
+		self.fig_toolbar = NavigationToolbar2QT(self.fig_canvas, self)
+		
+		self.grid = QGridLayout()
+		self.grid.addWidget(self.fig_toolbar, 0, 0)
+		self.grid.addWidget(self.fig_canvas, 1, 0)
+		
+		self.setLayout(self.grid)
 	
 	def _render_widget(self):
+		
+		# Call custom renderer if provided
+		if self.custom_render_func is not None:
+			self.custom_render_func(self)
+		
+		self.fig1.tight_layout()
+		self.fig1.canvas.draw_idle()
+		
+		self.is_current = True
+		
 		print(f"Control State: {self.control_requested.summarize()}")
 
 class BHSliderWidget(bh.BHControllerWidget):

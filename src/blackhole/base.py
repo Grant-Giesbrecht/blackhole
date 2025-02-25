@@ -55,14 +55,17 @@ class BHControlState:
 		self.log = log
 		
 		# Dictionary of parameters controlled/monitored by the widgets
-		self.parameters = {}
+		self._parameters = {}
+	
+	def get_param(self, param:str):
+		return self._parameters[param]
 	
 	def update_param(self, param:str, val):
 		self.log.debug(f"Parameter >:q{param}< changed to >:a{val}<")
-		self.parameters[param] = val
+		self._parameters[param] = val
 	
 	def summarize(self):
-		return f"{self.parameters}"
+		return f"{self._parameters}"
 	
 class BHListenerWidget(QWidget):
 	''' This class defines a widget which will automatically update to match the
