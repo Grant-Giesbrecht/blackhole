@@ -33,7 +33,7 @@ def apply_abbreviations(path:list, abbrevs:dict):
 		
 		# Check if abbreviation is present
 		if pd in abbrevs:
-			new_path.append(abbrevs[pd])
+			new_path.append(expand_path_list(abbrevs[pd], abbrevs))
 		else:
 			new_path.append(pd)
 	
@@ -43,13 +43,38 @@ def expand_path_list(path:list, abbrevs:dict):
 	''' Applies abbreviations and joins path elements.'''
 	
 	npath = apply_abbreviations(path, abbrevs)
-	return os.path.join(npath)
+	return os.path.join(*npath)
 
 class BHControlState:
 	
 	def __init__(self, log):
 		
 		self.log = log
+
+class DataSource():
+	''' Class representing a data source. It only specified where to find the
+	data, and parameters/conditions for the data. It does not contain
+	the actual data itself.'''
+	
+	def __init__(self, filename:str, params:dict, valid_idx):
+		self.file_fullpath = filename
+		self.file_name = os.path.basename(filename)
+		self.parameters = params
+		self.valid_active_set_indices = []
+
+class DataFilterLayer():
+	
+	def __init__(self, layer_idx:int, group_parameters:list, include_all:bool=False):
+		
+		# This is the (0-based) count for filtering order
+		self.layer_idx = layer_idx
+		
+		# These are the DataSource parameters that will be filtered in this layer. The
+		# list can contain 1+ elements.
+		self.group_parameters = group_parameters
+		
+		# Specifies if this layer should include an option to enable all filter options
+		self.include_all_option = include_all
 
 class BHDatasetManager():
 	''' This class organizes multiple independent datasets represented
@@ -124,48 +149,52 @@ class BHDatasetManager():
 			self.log.critical(f"Failed to load BHDatasetManager configuration file >dir_abbrev< section.", detail=f"{e}")
 			return False
 		
-		# # Read data_sources
-		# try:
+		# Read data_sources
+		first_iter = True
+		try:
 			
-		# 	for srcdict in data_conf['data_sources']:
+			for idx, srcdict in enumerate(data_conf['data_sources']):
 				
-			
-		# except Exception as e:
-		# 	self.log.critical(f"Failed to load BHDatasetManager configuration file >data_sources< section.", detail=f"{e}")
+				# Get filename
+				try:
+					file = expand_path_list(srcdict['file_path'], self.abbrevs)
+				except Exception as e:
+					fp = srcdict['file_path']
+					self.log.critical(f"Failed to load BHDatasetManager configuration file >data_sources< section.", detail=f"Exception=({e}), filepath = {fp}, abbrevs = {self.abbrevs}")
+					return False
+				
+				# Initialize parameters
+				if first_iter:
+					self.expected_file_parameters = list(srcdict['parameters'].keys())
+					
+				# Read all parameters
+				params = {}
+				for efp in self.expected_file_parameters:
+					
+					# Check for missing parameter
+					if efp not in srcdict['parameters']:
+						self.log.critical(f"Parameter >{efp}< missing for data_source No. {idx} (File={file}).")
+						return False
+					
+					params[efp] = srcdict['parameters'][efp]
+				
+				# Save datasource
+				self.log.lowdebug(f"Adding datasource from file: {short} -> {val}")
+				self.sources_info.append( DataSource(file, params, srcdict['valid_active_set_indices']) )
+				
+		except Exception as e:
+			self.log.critical(f"Failed to load BHDatasetManager configuration file >data_sources< section.", detail=f"{e}")
+			return False
 		
-		# # Evaluate each sweep source
-		# for dss in self.data_conf['sweep_sources']:
-			
-		# 	#For each entry, evaluate wildcards and find actual path
-		# 	full_path = get_general_path(dss['path'], dos_id_folder=True, print_details=cli_args.autopathdetails)
-			
-		# 	# Write log
-		# 	name = dss['chip_name']
-		# 	track = dss['track']
-		# 	if full_path is None:
-		# 		self.log.error(f"Failed to find sweep data source for chip {name}, track {track}.")
-		# 	else:
-		# 		self.log.debug(f"Sweep data source identified for chip {name}, track {track}.", detail=f"Path = {full_path}")
-			
-		# 	# Save full path string, or None for error
-		# 	dss['full_path'] = full_path
-		
-		# # Evaluate each sparam source
-		# for dss in self.data_conf['sparam_sources']:
-			
-		# 	#For each entry, evaluate wildcards and find actual path
-		# 	cryo_full_path = get_general_path(dss['cryostat_file'], dos_id_folder=True, print_details=cli_args.autopathdetails)
-			
-		# 	# Write log
-		# 	name = dss['chip_name']
-		# 	track = dss['track']
-		# 	if cryo_full_path is None:
-		# 		self.log.error(f"Failed to find s-parameter data source for chip {name}, track {track}.")
-		# 	else:
-		# 		self.log.debug(f"S-parameter data source identified for chip {name}, track {track}.", detail=f"Path = {full_path}")
-			
-		# 	# Save full path string, or None for error
-		# 	dss['cryo_full_path'] = cryo_full_path
+		# Read organizational structure
+		try:
+			for srcdict in data_conf['organization_structure']:
+				self.org_structure.append(DataFilterLayer(srcdict['layer'], srcdict['group_parameters'], srcdict['include_all_option']))
+				layer_no = srcdict['layer']
+				self.log.lowdebug(f"Added organizational layer >{layer_no}< from file.")
+		except Exception as e:
+			self.log.critical(f"Failed to load BHDatasetManager configuration file >organization_structure< section.", detail=f"{e}")
+			return False
 		
 		return True
 	
