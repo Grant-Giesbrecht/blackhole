@@ -127,7 +127,6 @@ class BHListenerWidget(BHWidget):
 		
 		# Update if active and out of date
 		if self.is_active() and (not self.is_current):
-			print("Rendering")
 			self._render_widget()
 	
 	@abstractmethod
@@ -568,7 +567,7 @@ class BHMainWindow(QtWidgets.QMainWindow):
 	
 	def broadcast_dataset_changes(self):
 		''' Informs all subscribers that the controls have changed.'''
-		print(f"Broadcast dataset changed")
+		
 		for sub in self.dataset_subscribers:
 			sub._dataset_changed()
 		
