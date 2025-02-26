@@ -256,6 +256,11 @@ class BHDatasetManager():
 		# Function (written by end user) to create a dataset. Will be given a 
 		# BHDataSource object and LogPile and should return a BHDataset-derived class instance.
 		self.load_function = load_function
+		
+		# Function that will be called when the dataset changes, to broadcast to
+		# all interested widgets that a change has occurred. THis function will
+		# automatically be set by the MainWindow.
+		self.broadcast_callback = None
 	
 	def load_configuration(self, filename:str=None, filepath:list=None, user_abbrevs:dict={}):
 		''' Reads a configuration file in JSON format that defines the data sources
@@ -376,6 +381,7 @@ class BHDatasetManager():
 			if ds.unique_id == unique_id:
 				self.active_datasets[active_index] = idx
 				self.log.info(f"Changed dataset for slot >:a{active_index}< to ID:>{unique_id}<.")
+				self.broadcast_was_changed()
 				return True
 		
 		# Else check unlaoded data
@@ -386,10 +392,17 @@ class BHDatasetManager():
 				self.loaded_data.append(self.load_function(ulds, self.log))
 				self.active_datasets[active_index] = len(self.loaded_data)-1
 				self.log.info(f"Loaded dataset from file with unique_id >{unique_id}< for slot >:a{active_index}<")
+				self.broadcast_was_changed()
 				return True
+		
+		
 		
 		self.log.error(f"Failed to find dataset with unique_id {unique_id}")
 		return False
+
+	def broadcast_was_changed(self):
+		if (self.broadcast_callback is not None) and callable(self.broadcast_callback):
+			self.broadcast_callback()
 	
 	def get_active(self, active_index:int=0):
 		''' Returns the active (or selected) dataset. If the end-user application 
@@ -513,6 +526,7 @@ class BHMainWindow(QtWidgets.QMainWindow):
 		self.log = log
 		self.app = app
 		self.data_manager = data_manager
+		self.data_manager.broadcast_callback = lambda: self.broadcast_dataset_changes()
 		self.control_requested = BHControlState(log)
 		
 		self.control_subscribers = [] # List of widgets to update when changes occur to control state
@@ -554,7 +568,10 @@ class BHMainWindow(QtWidgets.QMainWindow):
 	
 	def broadcast_dataset_changes(self):
 		''' Informs all subscribers that the controls have changed.'''
-	
+		print(f"Broadcast dataset changed")
+		for sub in self.dataset_subscribers:
+			sub._dataset_changed()
+		
 	def apply_default_layout(self):
 		pass
 	
