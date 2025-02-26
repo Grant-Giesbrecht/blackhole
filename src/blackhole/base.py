@@ -8,6 +8,7 @@ import pylogfile.base as plf
 import numpy as np
 import json
 import os
+import sys
 
 log = plf.LogPile()
 log.set_terminal_level("DEBUG")
@@ -65,20 +66,40 @@ class BHControlState:
 		return self._parameters[param]
 	
 	def update_param(self, param:str, val):
-		self.log.debug(f"Parameter >:q{param}< changed to >:a{val}<")
+		self.log.lowdebug(f"Parameter >:q{param}< changed to >:a{val}<")
 		self._parameters[param] = val
 	
 	def summarize(self):
 		return f"{self._parameters}"
 	
-class BHListenerWidget(QWidget):
+class BHWidget(QWidget):
+	
+	def __init__(self, main_window, dataset_changed_callback=None):
+		super().__init__()
+		self.main_window = main_window
+		self.control_requested = main_window.control_requested
+		self.data_manager = main_window.data_manager
+		self.log = main_window.log
+		
+		# Callback function to run (if provided) when the active dataset changes
+		self.dataset_changed_callback = dataset_changed_callback
+	
+	def _dataset_changed(self):
+		''' Tells widget the dataset has changed. Called by main_window when the
+		broadcast_dataset_changed() function is called. Runs a callback that
+		receives a single argument - the BHWidget object. '''
+		
+		# Check if callback provided
+		if (self.dataset_changed_callback is not None) and callable(self.dataset_changed_callback):
+			self.dataset_changed_callback(self)
+
+class BHListenerWidget(BHWidget):
 	''' This class defines a widget which will automatically update to match the
 	BHControlState when neccesary. It's designed to abstract the control system
 	from the user, so making robust controls is simpler.'''
 	
-	def __init__(self, control):
-		super().__init__()
-		self.control_requested = control
+	def __init__(self, main_window, **kwargs):
+		super().__init__(main_window, **kwargs)
 		
 		self.is_current = False
 		self._is_active = True # Indicates if the widget is visible and should be updated (for tabs)
@@ -92,7 +113,8 @@ class BHListenerWidget(QWidget):
 		self._ensure_current()
 	
 	def _get_update(self):
-		''' Tells the plot that the control state has changed. '''
+		''' Tells the plot that the control state has changed. Called by main
+		 window during broadcast control changed to all control subscribers. '''
 		
 		# Set as non-current
 		self.is_current = False
@@ -105,6 +127,7 @@ class BHListenerWidget(QWidget):
 		
 		# Update if active and out of date
 		if self.is_active() and (not self.is_current):
+			print("Rendering")
 			self._render_widget()
 	
 	@abstractmethod
@@ -113,12 +136,10 @@ class BHListenerWidget(QWidget):
 		Automatically called by _get_update() when plot is active. '''
 		pass
 
-class BHControllerWidget(QWidget):
+class BHControllerWidget(BHWidget):
 	
-	def __init__(self, main_window):
-		super().__init__()
-		# Needs access to the main window to be able to broadcast to all subs
-		self.main_window = main_window
+	def __init__(self, main_window, **kwargs):
+		super().__init__(main_window, **kwargs)
 	
 	@staticmethod
 	def broadcaster(func):
@@ -129,7 +150,37 @@ class BHControllerWidget(QWidget):
 			func(self, *args, **kwargs)
 			self.main_window.broadcast_control_changes()
 		return wrapper
+
+class BHTabWidget(QTabWidget):
 	
+	def __init__(self, main_window, *args, **kwargs):
+		super().__init__(*args, **kwargs)
+		
+		self.main_window = main_window
+		self.currentChanged.connect(self.update_active_widget)
+	
+	def update_active_widget(self):
+		
+		# Get active tab
+		active_idx = self.currentIndex()
+		
+		# Loop over all tabs
+		idx = 0
+		while True:
+			
+			# Get widget, break when out of range
+			wid = self.widget(idx)
+			if wid is None:
+				break
+			
+			# Set active status
+			wid.set_active(idx == active_idx)
+			
+			# Update index
+			idx += 1
+		
+		self.main_window.broadcast_control_changes()
+
 class BHDataSource():
 	''' Class representing a data source. It only specified where to find the
 	data, and parameters/conditions for the data. It does not contain
@@ -316,14 +367,15 @@ class BHDatasetManager():
 		
 		return True
 	
-	def set_active_dataset(self, unique_id:int, dataset_slot:int=1):
+	def set_active_dataset(self, unique_id:int, active_index:int=0):
 		''' Sets the active dataset, loading it from file if required.
 		'''
 		
 		# Look for data already loaded
 		for idx, ds in enumerate(self.loaded_data):
 			if ds.unique_id == unique_id:
-				self.active_datasets[dataset_slot] = idx
+				self.active_datasets[active_index] = idx
+				self.log.info(f"Changed dataset for slot >:a{active_index}< to ID:>{unique_id}<.")
 				return True
 		
 		# Else check unlaoded data
@@ -332,25 +384,34 @@ class BHDatasetManager():
 			if ulds.unique_id == unique_id:
 				# Load data
 				self.loaded_data.append(self.load_function(ulds, self.log))
-				self.log.info(f"Loaded dataset with unique_id >{unique_id}<.")
+				self.active_datasets[active_index] = len(self.loaded_data)-1
+				self.log.info(f"Loaded dataset from file with unique_id >{unique_id}< for slot >:a{active_index}<")
 				return True
 		
 		self.log.error(f"Failed to find dataset with unique_id {unique_id}")
 		return False
 	
-	def get_data(self, active_index:int=0):
+	def get_active(self, active_index:int=0):
 		''' Returns the active (or selected) dataset. If the end-user application 
 		requires multiple simultaneously active datasets, the active_index can
 		be used to select the secondary, tertiary etc datasets.
 		'''
-		pass
+		
+		# Check that set has been selected
+		if active_index not in self.active_datasets:
+			self.log.error(f"Cannot return dataset for slot >:a{active_index}<. No dataset has been selected yet.")
+			return None
+		
+		return self.loaded_data[self.active_datasets[active_index]]
+
 
 class BHDatasetSelectBasicWidget(QWidget):
 	
-	def __init__(self, manager:BHDatasetManager, log):
+	def __init__(self, main_window, log):
 		super().__init__()
 		
-		self.manager = manager
+		self.main_window = main_window
+		self.manager = main_window.data_manager
 		self.log = log
 		
 		self.grid = QGridLayout()
@@ -386,6 +447,8 @@ class BHDatasetSelectBasicWidget(QWidget):
 		# Change active dataset
 		id = int(filename.text())
 		self.manager.set_active_dataset(id)
+		
+		self.main_window.broadcast_control_changes()
 
 # class BHLayerSelectWidget(QGroupBox):
 # 	''' Internal widget to BHDatasetSelectWidget. Acts as a single check box.'''
@@ -453,6 +516,7 @@ class BHMainWindow(QtWidgets.QMainWindow):
 		self.control_requested = BHControlState(log)
 		
 		self.control_subscribers = [] # List of widgets to update when changes occur to control state
+		self.dataset_subscribers = [] # List of widgets to update when the dataset is changed
 		
 		#------------- Make GUI elements ------------------
 		
@@ -480,5 +544,57 @@ class BHMainWindow(QtWidgets.QMainWindow):
 		for sub in self.control_subscribers:
 			sub._get_update()
 	
+	def add_dataset_subscriber(self, widget): # TODO Make BHWidget base class
+		''' Adds a widget to the subscribers list. These widgets will be 
+		informed when a change has been made to the active dataset. These 
+		widgets are often controls that need to update their options to 
+		reflect the new data available.'''
+		
+		self.dataset_subscribers.append(widget)
+	
+	def broadcast_dataset_changes(self):
+		''' Informs all subscribers that the controls have changed.'''
+	
 	def apply_default_layout(self):
 		pass
+	
+	def add_basic_menu_bar(self):
+		
+		self.bar = self.menuBar()
+		
+		#----------------- File Menu ----------------
+		
+		self.file_menu = self.bar.addMenu("File")
+		
+		# self.save_graph_act = QAction("Save Graph", self)
+		# self.save_graph_act.setShortcut("Ctrl+Shift+G")
+		# self.file_menu.addAction(self.save_graph_act)
+		
+		self.close_window_act = QAction("Close Window", self)
+		self.close_window_act.setShortcut("Ctrl+W")
+		self.close_window_act.triggered.connect(self._basic_menu_close)
+		self.file_menu.addAction(self.close_window_act)
+		
+		#----------------- Edit Menu ----------------
+		
+		self.edit_menu = self.bar.addMenu("Edit")
+		
+		# self.save_graph_act = QAction("Save Graph", self)
+		# self.save_graph_act.setShortcut("Ctrl+Shift+G")
+		# self.file_menu.addAction(self.save_graph_act)
+		
+		self.refresh_act = QAction("Refresh", self)
+		self.refresh_act.setShortcut("Ctrl+R")
+		self.refresh_act.triggered.connect(self._basic_menu_refresh)
+		self.edit_menu.addAction(self.refresh_act)
+		
+		
+
+	def _basic_menu_close(self):
+
+		self.close()
+		sys.exit(0)
+	
+	def _basic_menu_refresh(self):
+
+		self.broadcast_control_changes()
