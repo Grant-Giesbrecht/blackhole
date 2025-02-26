@@ -62,6 +62,10 @@ class BHControlState:
 		self.log.debug(f"Creating >:q{param}< with initial value >:a{val}<.")
 		self._parameters[param] = val
 	
+	def has_param(self, param:str):
+		''' Checks if the specified parameter is contained in the control state.'''
+		return (param in self._parameters)
+	
 	def get_param(self, param:str):
 		return self._parameters[param]
 	
