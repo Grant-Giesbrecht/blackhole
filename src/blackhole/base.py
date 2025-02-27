@@ -59,7 +59,7 @@ class BHControlState:
 		self._parameters = {}
 	
 	def add_param(self, param:str, val):
-		self.log.debug(f"Creating >:q{param}< with initial value >:a{val}<.")
+		self.log.lowdebug(f"Creating >:q{param}< with initial value >:a{val}<.")
 		self._parameters[param] = val
 	
 	def has_param(self, param:str):
@@ -69,7 +69,15 @@ class BHControlState:
 	def get_param(self, param:str):
 		return self._parameters[param]
 	
-	def update_param(self, param:str, val):
+	def update_param(self, param:str, val, add_if_missing:bool=False):
+		
+		if not self.has_param(param):
+			if add_if_missing:
+				self.add_param(param, val)
+				return
+			else:
+				return
+		
 		self.log.lowdebug(f"Parameter >:q{param}< changed to >:a{val}<")
 		self._parameters[param] = val
 	

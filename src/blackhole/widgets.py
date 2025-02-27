@@ -13,6 +13,25 @@ import os
 
 import blackhole.base as bh
 
+def plot_pos_to_string(x):
+	if isinstance(x[0], slice):
+		a = x[0].start
+		b = x[0].stop
+		out = f"[{a}:{b}, "
+	else:
+		a = x[0]
+		out = f"[{a}, "
+	
+	if isinstance(x[1], slice):
+		a = x[1].start
+		b = x[1].stop
+		out = out + f"{a}:{b}]"
+	else:
+		a = x[1]
+		out = out + f"{a}]"
+	
+	return out
+
 class BHPlotWidget(bh.BHListenerWidget):
 	
 	def __init__(self, main_window, **kwargs): #, xlabel:str="", ylabel:str="", title:str="", ):
@@ -47,6 +66,13 @@ class BHPlotWidget(bh.BHListenerWidget):
 		self.is_current = True
 
 class BHMultiPlotWidget(bh.BHListenerWidget):
+	''' A widget that allows multiple graphs to be displayed.
+	
+	Features:
+	 - Is a Listener widget - will automatically update when the global control state changes.
+	 - Automatically includes GUI for changing graph settings.
+	 - Plotting logic done via custom function, no need to make a new class.
+	'''
 	
 	X_AUTO = "AXIS_XLIM_AUTO"
 	X_MIN = "AXIS_XLIM_MIN"
@@ -55,7 +81,7 @@ class BHMultiPlotWidget(bh.BHListenerWidget):
 	Y_MIN = "AXIS_YLIM_MIN"
 	Y_MAX = "AXIS_YLIM_MAX"
 	
-	def __init__(self,main_window, grid_dim:list, plot_locations:list, custom_render_func=None, include_settings_button:bool=False): #, xlabel:str="", ylabel:str="", title:str="", ):
+	def __init__(self,main_window, grid_dim:list, plot_locations:list, custom_render_func=None, include_settings_button:bool=True): #, xlabel:str="", ylabel:str="", title:str="", ):
 		super().__init__(main_window)
 		
 		self.main_window = main_window
@@ -69,12 +95,16 @@ class BHMultiPlotWidget(bh.BHListenerWidget):
 		# controlstate cleaner and easier to understand. 
 		self.local_controls = bh.BHControlState(self.main_window.log)
 		
+		# Save plot locations so I can later translate axis index to position (for the end user's reference)
+		self.plot_locations = plot_locations
+		
 		# Create figure in matplotlib
 		self.fig1 = plt.figure()
 		self.gs = self.fig1.add_gridspec(*grid_dim)
 		self.axes = []
-		for ploc in plot_locations:
+		for idx, ploc in enumerate(plot_locations):
 			self.axes.append(self.fig1.add_subplot(self.gs[ploc[0], ploc[1]]))
+			self.configure_integrated_bounds(ax=idx, xlim=None, ylim=None)
 		
 		# Create Qt Figure Canvas
 		self.fig_canvas = FigureCanvas(self.fig1)
@@ -116,22 +146,22 @@ class BHMultiPlotWidget(bh.BHListenerWidget):
 			raise Exception(f"Axis index out of bounds.")
 		
 		# Configure x-axis limits
-		self.local_controls.add_param(f"{ax}{BHMultiPlotWidget.X_AUTO}", (xlim is None))
+		self.local_controls.update_param(f"{ax}{BHMultiPlotWidget.X_AUTO}", (xlim is None), add_if_missing=True)
 		if xlim is None:
-			self.local_controls.add_param(f"{ax}{BHMultiPlotWidget.X_MIN}", 0)
-			self.local_controls.add_param(f"{ax}{BHMultiPlotWidget.X_MAX}", 1)
+			self.local_controls.update_param(f"{ax}{BHMultiPlotWidget.X_MIN}", 0, add_if_missing=True)
+			self.local_controls.update_param(f"{ax}{BHMultiPlotWidget.X_MAX}", 1, add_if_missing=True)
 		else:
-			self.local_controls.add_param(f"{ax}{BHMultiPlotWidget.X_MIN}", xlim[0])
-			self.local_controls.add_param(f"{ax}{BHMultiPlotWidget.X_MAX}", xlim[1])
+			self.local_controls.update_param(f"{ax}{BHMultiPlotWidget.X_MIN}", xlim[0], add_if_missing=True)
+			self.local_controls.update_param(f"{ax}{BHMultiPlotWidget.X_MAX}", xlim[1], add_if_missing=True)
 		
 		# Configure y-axis limits
-		self.local_controls.add_param(f"{ax}{BHMultiPlotWidget.Y_AUTO}", (ylim is None))
+		self.local_controls.update_param(f"{ax}{BHMultiPlotWidget.Y_AUTO}", (ylim is None), add_if_missing=True)
 		if ylim is None:
-			self.local_controls.add_param(f"{ax}{BHMultiPlotWidget.Y_MIN}", 0)
-			self.local_controls.add_param(f"{ax}{BHMultiPlotWidget.Y_MAX}", 1)
+			self.local_controls.update_param(f"{ax}{BHMultiPlotWidget.Y_MIN}", 0, add_if_missing=True)
+			self.local_controls.update_param(f"{ax}{BHMultiPlotWidget.Y_MAX}", 1, add_if_missing=True)
 		else:
-			self.local_controls.add_param(f"{ax}{BHMultiPlotWidget.Y_MIN}", ylim[0])
-			self.local_controls.add_param(f"{ax}{BHMultiPlotWidget.Y_MAX}", ylim[1])
+			self.local_controls.update_param(f"{ax}{BHMultiPlotWidget.Y_MIN}", ylim[0], add_if_missing=True)
+			self.local_controls.update_param(f"{ax}{BHMultiPlotWidget.Y_MAX}", ylim[1], add_if_missing=True)
 	
 	def _render_widget(self):
 		
@@ -139,6 +169,10 @@ class BHMultiPlotWidget(bh.BHListenerWidget):
 		if self.custom_render_func is not None:
 			self.custom_render_func(self)
 		
+		# Apply integrated bounds system
+		self.apply_integrated_plot_bounds()
+		
+		# Apply tight bounds and draw
 		self.fig1.tight_layout()
 		self.fig1.canvas.draw_idle()
 		
@@ -199,6 +233,11 @@ class AxesConfigWidget(QWidget):
 		ymin = self.control.get_param(f"{ax_idx}{BHMultiPlotWidget.Y_MIN}")
 		ymax = self.control.get_param(f"{ax_idx}{BHMultiPlotWidget.Y_MAX}")
 		
+		label_font = QtGui.QFont()
+		label_font.setBold(True)
+		
+		#==================== Create Controls =================
+		
 		self.xauto_cb = QCheckBox("Auto X-Limits")
 		self.xauto_cb.setChecked(xauto)
 		self.xauto_cb.stateChanged.connect(self.apply_changes)
@@ -217,12 +256,71 @@ class AxesConfigWidget(QWidget):
 		self.xmax_edit.setFixedWidth(40)
 		self.xmax_edit.editingFinished.connect(self.apply_changes)
 		
+		self.yauto_cb = QCheckBox("Auto Y-Limits")
+		self.yauto_cb.setChecked(yauto)
+		self.yauto_cb.stateChanged.connect(self.apply_changes)
+		
+		self.ymin_label = QLabel("Y-Limit, Low:")
+		self.ymin_edit = QLineEdit()
+		self.ymin_edit.setValidator(QDoubleValidator())
+		self.ymin_edit.setText(f"{ymin}")
+		self.ymin_edit.setFixedWidth(40)
+		self.ymin_edit.editingFinished.connect(self.apply_changes)
+		
+		self.ymax_label = QLabel("Y-Limit, High:")
+		self.ymax_edit = QLineEdit()
+		self.ymax_edit.setValidator(QDoubleValidator())
+		self.ymax_edit.setText(f"{ymax}")
+		self.ymax_edit.setFixedWidth(40)
+		self.ymax_edit.editingFinished.connect(self.apply_changes)
+		
+		#==================== Create Labels ======================
+		
+		ax_obj = mp_widget.axes[ax_idx]
+		self.info_title_lab = QLabel("Title:")
+		self.info_title_lab.setFont(label_font)
+		self.info_title_labval = QLabel(f"{ax_obj.get_title()}")
+		
+		self.info_ylab_lab = QLabel("X Label:")
+		self.info_ylab_lab.setFont(label_font)
+		self.info_ylab_labval = QLabel(f"{ax_obj.get_xlabel()}")
+		
+		self.info_xlab_lab = QLabel("Y Label:")
+		self.info_xlab_lab.setFont(label_font)
+		self.info_xlab_labval = QLabel(f"{ax_obj.get_ylabel()}")
+		
+		self.info_pos_lab = QLabel("Position:")
+		self.info_pos_lab.setFont(label_font)
+		self.info_pos_labval = QLabel( plot_pos_to_string(mp_widget.plot_locations[ax_idx]) )
+		
+		#================ Apply to Grid ===================
+		
+		n1 = 0
+		n2 = n1+3
+		n3 = n1+n2+3
+		
+		
 		self.grid = QGridLayout()
-		self.grid.addWidget(self.xauto_cb, 0, 1)
-		self.grid.addWidget(self.xmin_label, 1, 0)
-		self.grid.addWidget(self.xmin_edit, 1, 1)
-		self.grid.addWidget(self.xmax_label, 2, 0)
-		self.grid.addWidget(self.xmax_edit, 2, 1)
+		self.grid.addWidget(self.xauto_cb, n1+0, 1)
+		self.grid.addWidget(self.xmin_label, n1+1, 0)
+		self.grid.addWidget(self.xmin_edit, n1+1, 1)
+		self.grid.addWidget(self.xmax_label, n1+2, 0)
+		self.grid.addWidget(self.xmax_edit, n1+2, 1)
+		
+		self.grid.addWidget(self.yauto_cb, n2+0, 1)
+		self.grid.addWidget(self.ymin_label, n2+1, 0)
+		self.grid.addWidget(self.ymin_edit, n2+1, 1)
+		self.grid.addWidget(self.ymax_label, n2+2, 0)
+		self.grid.addWidget(self.ymax_edit, n2+2, 1)
+		
+		self.grid.addWidget(self.info_title_lab, n3+0, 0)
+		self.grid.addWidget(self.info_title_labval, n3+0, 1)
+		self.grid.addWidget(self.info_xlab_lab, n3+1, 0)
+		self.grid.addWidget(self.info_xlab_labval, n3+1, 1)
+		self.grid.addWidget(self.info_ylab_lab, n3+2, 0)
+		self.grid.addWidget(self.info_ylab_labval, n3+2, 1)
+		self.grid.addWidget(self.info_pos_lab, n3+3, 0)
+		self.grid.addWidget(self.info_pos_labval, n3+3, 1)
 		
 		self.setLayout(self.grid)
 	
@@ -238,7 +336,7 @@ class AxesConfigWidget(QWidget):
 		self.control.update_param(f"{self.ax_idx}{BHMultiPlotWidget.X_MIN}", xmin)
 		self.control.update_param(f"{self.ax_idx}{BHMultiPlotWidget.X_MAX}", xmax)
 		
-
+		self.mp_widget._render_widget()
 
 class BHIntegratedBoundsControlWindow(QMainWindow):
 	
