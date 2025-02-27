@@ -331,10 +331,18 @@ class AxesConfigWidget(QWidget):
 		xmin = float(self.xmin_edit.text())
 		xmax = float(self.xmax_edit.text())
 		
+		yauto = self.yauto_cb.isChecked()
+		ymin = float(self.ymin_edit.text())
+		ymax = float(self.ymax_edit.text())
+		
 		# Save values to controller
 		self.control.update_param(f"{self.ax_idx}{BHMultiPlotWidget.X_AUTO}", xauto)
 		self.control.update_param(f"{self.ax_idx}{BHMultiPlotWidget.X_MIN}", xmin)
 		self.control.update_param(f"{self.ax_idx}{BHMultiPlotWidget.X_MAX}", xmax)
+		
+		self.control.update_param(f"{self.ax_idx}{BHMultiPlotWidget.Y_AUTO}", yauto)
+		self.control.update_param(f"{self.ax_idx}{BHMultiPlotWidget.Y_MIN}", ymin)
+		self.control.update_param(f"{self.ax_idx}{BHMultiPlotWidget.Y_MAX}", ymax)
 		
 		self.mp_widget._render_widget()
 
@@ -342,6 +350,9 @@ class BHIntegratedBoundsControlWindow(QMainWindow):
 	
 	def __init__(self, mp_widget:BHMultiPlotWidget):
 		super().__init__()
+		
+		self.setWindowTitle("Plot Settings")
+		self.setFixedSize(325, 325)
 		
 		self.mp_widget = mp_widget
 		self.grid = QGridLayout()
