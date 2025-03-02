@@ -371,7 +371,7 @@ class BHIntegratedBoundsControlWindow(QMainWindow):
 		
 class BHSliderWidget(bh.BHControllerWidget):
 	
-	def __init__(self, main_window, param, header_label:str="", initial_val:float=None, unit_label:str="", min:float=None, max:float=None, tick_step:float=None, dataset_changed_callback=None, step:float=1, editable_val_labels:bool=True):
+	def __init__(self, main_window, param, header_label:str="", initial_val:float=None, unit_label:str="", min:float=None, max:float=None, tick_step:float=1, dataset_changed_callback=None, step:float=1, editable_val_labels:bool=True, draw_labels=True):
 		super().__init__(main_window)
 		
 		# This is the parameter which the slider will control
@@ -380,10 +380,15 @@ class BHSliderWidget(bh.BHControllerWidget):
 		self.dataset_changed_callback = dataset_changed_callback #TODO: Put this into base class?
 		self.editable_val_labels = editable_val_labels
 		self._manual_entry_freeze = True # Temporarily ignores changes to manuel edit box (to avoid inf cycle)
+		self._slider_freeze = False # Temporarily ignores changes to slider position
+		self.draw_labels = draw_labels # Controls if # labels are placed on side of slider
+		# self.max_labels = 2 # Max number of side labels to add
 		
 		self.step_size = step
 		self.scaled_min = None
 		self.scaled_max = None
+		
+		self.side_labels = [] # List of label objects on side of slider
 		
 		# Get initial value from controls
 		if initial_val is None:
@@ -438,9 +443,29 @@ class BHSliderWidget(bh.BHControllerWidget):
 		self.set_slider_position(val0)
 		self.slider.valueChanged.connect(self.update)
 		
+		# Add slider labels if asked
+		if self.draw_labels:
+			
+			# TODO: Hard coded for just 2
+			self.side_labels.append(QLabel(f"{self.scaled_max*self.step_size}"))
+			self.side_labels.append(QLabel(f"{self.scaled_min*self.step_size}"))
+			vspacer = QSpacerItem(10, 10, QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Expanding)
+			
+			self.gbl = QGroupBox()
+			self.gbl_lay = QGridLayout()
+			self.gbl.setStyleSheet("QGroupBox{border:0;}")
+			self.gbl_lay.addWidget(self.side_labels[0], 0, 1)
+			self.gbl_lay.addItem(vspacer, 1, 1)
+			self.gbl_lay.addWidget(self.side_labels[1], 2, 1)
+			self.gbl_lay.addWidget(self.slider, 0, 0, 3, 1)
+			self.gbl.setLayout(self.gbl_lay)
+			
+			self.grid.addWidget(self.gbl, 1, 0)
+		else:
+			self.grid.addWidget(self.slider, 1, 0)
+			
 		# Add widgets to grid
 		self.grid.addWidget(self.header_label, 0, 0)
-		self.grid.addWidget(self.slider, 1, 0)
 		if self.editable_val_labels:
 			self.gb = QGroupBox()
 			self.gb_lay = QGridLayout()
@@ -456,12 +481,53 @@ class BHSliderWidget(bh.BHControllerWidget):
 		# Set layout
 		self.setLayout(self.grid)
 	
+	def set_maximum(self, max:float):
+		''' Updates the slider's maximum value'''
+		self.scaled_max = round(max/self.step_size)
+		self.slider.setMaximum(self.scaled_max)
+		
+		# Update max label
+		if self.draw_labels:
+			self.side_labels[0].setText(f"{self.scaled_max*self.step_size}")
+	
+	def set_minimum(self, min:float):
+		''' Updates the slider's minimum value'''
+		self.scaled_min = round(min/self.step_size)
+		self.slider.setMinimum(self.scaled_min)
+		
+		# Update min label
+		if self.draw_labels:
+			self.side_labels[1].setText(f"{self.scaled_min*self.step_size}")
+	
+	def set_step(self, step_size:float):
+		
+		# Get actual bounds
+		min_val = self.scaled_min*self.step_size
+		max_val = self.scaled_max*self.step_size
+		slider_val = self.slider.sliderPosition()
+		
+		# Change step size (scaling coefficient)
+		self.step_size = step_size
+		
+		# Rescale bounds
+		self.scaled_min = round(min_val/self.step_size)
+		self.scaled_max = round(max_val/self.step_size)
+		
+		# Readjust slider bounds
+		self.slider.setMinimum(self.scaled_min)
+		self.slider.setMaximum(self.scaled_max)
+		
+		# Reposition slider
+		self._slider_freeze = True
+		self.set_slider_position(slider_val/self.step_size)
+		self._slider_freeze = False
+	
 	def _update_from_typed_val(self):
 		''' Update slider value after a value is entered into the text edit box'''
 		
 		# Abort if told to ignore changes to text edit
 		if self._manual_entry_freeze:
-			return 
+			return
 		
 		# Get entered value
 		val = float(self.value_edit.text())
@@ -471,6 +537,8 @@ class BHSliderWidget(bh.BHControllerWidget):
 		elif val_idx < self.scaled_min:
 			val_idx = self.scaled_min
 		val_rd = val_idx*self.step_size
+		
+		# self.log.lowdebug(f"Slider entry box set to {val}, scales to {val_idx}, rounds to {val_rd}")
 		
 		# Apply rounded value to slider (Slider will update value with ControlState object)
 		self.set_slider_position(val_rd)
@@ -502,6 +570,10 @@ class BHSliderWidget(bh.BHControllerWidget):
 	@bh.BHControllerWidget.broadcaster
 	def update(self, new_slider_pos):
 		''' Called when slider changes.'''
+		
+		# Return if slider frozen
+		if self._slider_freeze:
+			return
 		
 		self.log.debug(f"Slider moved; updating. New position: index={new_slider_pos}, val={new_slider_pos*self.step_size}")
 		
