@@ -371,13 +371,19 @@ class BHIntegratedBoundsControlWindow(QMainWindow):
 		
 class BHSliderWidget(bh.BHControllerWidget):
 	
-	def __init__(self, main_window, param, header_label:str="", initial_val:float=None, unit_label:str="", step:float=None, min:float=None, max:float=None, tick_step:float=None, dataset_changed_callback=None):
+	def __init__(self, main_window, param, header_label:str="", initial_val:float=None, unit_label:str="", min:float=None, max:float=None, tick_step:float=None, dataset_changed_callback=None, step:float=1, editable_val_labels:bool=True):
 		super().__init__(main_window)
 		
 		# This is the parameter which the slider will control
 		self.control_parameter = param
 		self.unit_label = unit_label
 		self.dataset_changed_callback = dataset_changed_callback #TODO: Put this into base class?
+		self.editable_val_labels = editable_val_labels
+		self._manual_entry_freeze = True # Temporarily ignores changes to manuel edit box (to avoid inf cycle)
+		
+		self.step_size = step
+		self.scaled_min = None
+		self.scaled_max = None
 		
 		# Get initial value from controls
 		if initial_val is None:
@@ -391,48 +397,114 @@ class BHSliderWidget(bh.BHControllerWidget):
 		self.header_label = QtWidgets.QLabel()
 		self.header_label.setText(header_label)
 		
+		# self.slider.setTick(step)
+		
 		# Create slider
 		self.slider = QSlider(Qt.Orientation.Vertical)
-		if step is not None:
-			self.slider.setSingleStep(step)
+			
+		# Step size must be an int
+		self.slider.setSingleStep(1)
+		
+		# Adjust bounds to scale step to 1 (step must be an int)
 		if min is not None:
+			self.scaled_min = round(min/self.step_size)
 			if val0 < min:
 				val0 = min
-			self.slider.setMinimum(min)
+			self.slider.setMinimum(self.scaled_min)
 		if max is not None:
+			self.scaled_max = round(max/self.step_size)
 			if val0 > max:
 				val0 = max
-			self.slider.setMaximum(max)
-		if tick_step is not None:
-			self.slider.setTickInterval(tick_step)
+			self.slider.setMaximum(self.scaled_max)
 		
-		# Initialize value label
+		if tick_step is not None:
+			self.slider.setTickInterval(round(tick_step/self.step_size))
+		
+		# Initialize value edit (if requested)
+		if self.editable_val_labels:
+			self.value_edit = QtWidgets.QLineEdit()
+			self.value_edit.setValidator(QDoubleValidator())
+			self.value_edit.setFixedWidth(50)
+			self.value_edit.editingFinished.connect(self._update_from_typed_val)
+		
+		# Create value label
 		self.value_label = QtWidgets.QLabel()
 		self._update_val_label(val0)
 		
+		# Re-enable manual entry box
+		self._manual_entry_freeze = False
+		
 		# Set initial position and callback
-		self.slider.setSliderPosition(val0)
+		self.set_slider_position(val0)
 		self.slider.valueChanged.connect(self.update)
 		
 		# Add widgets to grid
 		self.grid.addWidget(self.header_label, 0, 0)
 		self.grid.addWidget(self.slider, 1, 0)
-		self.grid.addWidget(self.value_label, 2, 0)
+		if self.editable_val_labels:
+			self.gb = QGroupBox()
+			self.gb_lay = QGridLayout()
+			self.gb.setStyleSheet("QGroupBox{border:0;}")
+			self.gb_lay.addWidget(self.value_edit, 0, 0)
+			self.gb_lay.addWidget(self.value_label, 0, 1)
+			self.gb.setLayout(self.gb_lay)
+			self.grid.addWidget(self.gb, 2, 0)
+			
+		else:
+			self.grid.addWidget(self.value_label, 2, 0)
 	
 		# Set layout
 		self.setLayout(self.grid)
+	
+	def _update_from_typed_val(self):
+		''' Update slider value after a value is entered into the text edit box'''
 		
+		# Abort if told to ignore changes to text edit
+		if self._manual_entry_freeze:
+			return 
+		
+		# Get entered value
+		val = float(self.value_edit.text())
+		val_idx = round(val/self.step_size)
+		if val_idx > self.scaled_max:
+			val_idx = self.scaled_max
+		elif val_idx < self.scaled_min:
+			val_idx = self.scaled_min
+		val_rd = val_idx*self.step_size
+		
+		# Apply rounded value to slider (Slider will update value with ControlState object)
+		self.set_slider_position(val_rd)
+		
+		# Update slider to rounded value
+		self._manual_entry_freeze = True # Prevent this function from running again
+		self.value_edit.setText(f"{val_rd}")
+		self._manual_entry_freeze = False # RE-enable this function
+	
+	def set_slider_position(self, val:float):
+		self.log.debug(f"Setting slider position to >{val}<, index={round(val/self.step_size)}")
+		self.slider.setSliderPosition(round(val/self.step_size))
+	
 	def _update_val_label(self, value):
-		
-		if len(self.unit_label) > 0:
-			self.value_label.setText(f"{value} ({self.unit_label})")
+		if self.editable_val_labels:
+			if len(self.unit_label) > 0:
+				self.value_label.setText(f"({self.unit_label})")
+			else:
+				self.value_label.setText(f"")
+			self._manual_entry_freeze = True
+			self.value_edit.setText(f"{value}")
+			self._manual_entry_freeze = False
 		else:
-			self.value_label.setText(f"{value}")
+			if len(self.unit_label) > 0:
+				self.value_label.setText(f"{value} ({self.unit_label})")
+			else:
+				self.value_label.setText(f"{value}")
 	
 	@bh.BHControllerWidget.broadcaster
 	def update(self, new_slider_pos):
 		''' Called when slider changes.'''
 		
-		self._update_val_label(new_slider_pos)
-		self.main_window.control_requested.update_param(self.control_parameter, new_slider_pos)
+		self.log.debug(f"Slider moved; updating. New position: index={new_slider_pos}, val={new_slider_pos*self.step_size}")
+		
+		self._update_val_label(new_slider_pos*self.step_size)
+		self.main_window.control_requested.update_param(self.control_parameter, new_slider_pos*self.step_size)
 		# self.main_window.broadcast_control_changes()
