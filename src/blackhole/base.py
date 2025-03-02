@@ -433,6 +433,7 @@ class BHDatasetSelectBasicWidget(QWidget):
 	
 	def __init__(self, main_window, log):
 		super().__init__()
+		self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
 		
 		self.main_window = main_window
 		self.manager = main_window.data_manager

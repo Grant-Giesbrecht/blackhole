@@ -373,6 +373,7 @@ class BHSliderWidget(bh.BHControllerWidget):
 	
 	def __init__(self, main_window, param, header_label:str="", initial_val:float=None, unit_label:str="", min:float=None, max:float=None, tick_step:float=1, dataset_changed_callback=None, step:float=1, editable_val_labels:bool=True, draw_labels=True):
 		super().__init__(main_window)
+		self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Expanding)
 		
 		# This is the parameter which the slider will control
 		self.control_parameter = param
