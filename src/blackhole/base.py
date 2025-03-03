@@ -9,6 +9,7 @@ import numpy as np
 import json
 import os
 import sys
+import pyperclip
 
 log = plf.LogPile()
 log.set_terminal_level("DEBUG")
@@ -443,6 +444,11 @@ class BHDatasetDescriptorWidget(BHWidget):
 		self.filename_lab = QLabel("Filename:")
 		self.filename_lab.setFont(self.label_font)
 		self.filename_val = QLabel("")
+		self.filename = ""
+		
+		self.copy_btn = QPushButton(f"Copy Filename")
+		self.copy_btn.setFixedSize(100, 25)
+		self.copy_btn.clicked.connect(self._copy_filename)
 		
 		self.path_lab = QLabel("Full Path:")
 		self.path_lab.setFont(self.label_font)
@@ -472,12 +478,16 @@ class BHDatasetDescriptorWidget(BHWidget):
 		self.param_box.setLayout(self.pb_grid)
 		
 		self.grid = QGridLayout()
-		self.grid.addWidget(self.filename_lab, 0, 0, 1, 2)
+		self.grid.addWidget(self.filename_lab, 0, 0)
+		self.grid.addWidget(self.copy_btn, 0, 1)
 		self.grid.addWidget(self.filename_val, 1, 0, 1, 2)
 		self.grid.addWidget(self.path_lab, 2, 0, 1, 2)
 		self.grid.addWidget(self.path_lab, 3, 0, 1, 2)
 		self.grid.addWidget(self.param_box, 4, 0, 1, 2)
 		self.setLayout(self.grid)
+	
+	def _copy_filename(self):
+		pyperclip.copy(self.filename)
 	
 	@staticmethod
 	def update_descriptor( wid):
@@ -487,6 +497,7 @@ class BHDatasetDescriptorWidget(BHWidget):
 		
 		# Update fields
 		wid.filename_val.setText(ds.source_info.file_name)
+		wid.filename = ds.source_info.file_name
 		wid.path_val.setText(ds.source_info.file_fullpath)
 		
 		# Update each parameter in turn
