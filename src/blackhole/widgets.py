@@ -650,6 +650,8 @@ class SliderSettingsWidget(QWidget):
 		
 		#==================== Create Labels ======================
 		
+		self.vspacer =  QSpacerItem(10, 10, QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Expanding)
+		
 		self.cp_lab = QLabel("Control Parameter:")
 		self.cp_lab.setFont(label_font)
 		self.cp_labval = QLabel(f"{self.sldr_widget.control_parameter}")
@@ -671,10 +673,11 @@ class SliderSettingsWidget(QWidget):
 		self.grid.addWidget(self.xstep_label, n1+2, 0)
 		self.grid.addWidget(self.xstep_edit, n1+2, 1)
 		
-		self.grid.addWidget(self.cp_lab, n2+0, 0, 1, 2)
-		self.grid.addWidget(self.cp_labval, n2+1, 0, 1, 2)
-		self.grid.addWidget(self.unit_lab, n2+2, 0)
-		self.grid.addWidget(self.unit_labval, n2+2, 1)
+		self.grid.addItem(self.vspacer, n2+0, 0)
+		self.grid.addWidget(self.cp_lab, n2+1, 0, 1, 2)
+		self.grid.addWidget(self.cp_labval, n2+2, 0, 1, 2)
+		self.grid.addWidget(self.unit_lab, n2+3, 0)
+		self.grid.addWidget(self.unit_labval, n2+3, 1)
 		
 		self.setLayout(self.grid)
 	
