@@ -402,6 +402,7 @@ class BHSliderWidget(bh.BHControllerWidget):
 		# Create header label
 		self.header_label = QtWidgets.QLabel()
 		self.header_label.setText(header_label)
+		self.header_label_txt = header_label
 		
 		# self.slider.setTick(step)
 		
@@ -481,6 +482,15 @@ class BHSliderWidget(bh.BHControllerWidget):
 	
 		# Set layout
 		self.setLayout(self.grid)
+	
+	def get_maximum(self):
+		return self.scaled_max*self.step_size
+	
+	def get_minimum(self):
+		return self.scaled_min*self.step_size
+	
+	def get_step(self):
+		return self.step_size
 	
 	def set_maximum(self, max:float):
 		''' Updates the slider's maximum value'''
@@ -581,3 +591,154 @@ class BHSliderWidget(bh.BHControllerWidget):
 		self._update_val_label(new_slider_pos*self.step_size)
 		self.main_window.control_requested.update_param(self.control_parameter, new_slider_pos*self.step_size)
 		# self.main_window.broadcast_control_changes()
+
+class SliderSettingsWidget(QWidget):
+	''' Used inside BHIntegratedSliderSettingsWindow to represent one tab page.'''
+	
+	def __init__(self, sldr_widget):
+		super().__init__()
+		
+		# self.ax_idx = ax_idx
+		self.sldr_widget = sldr_widget
+		# self.control = mp_widget.local_controls
+		
+		xstep = self.sldr_widget.get_step()
+		xmin = self.sldr_widget.get_minimum()
+		xmax = self.sldr_widget.get_maximum()
+		
+		label_font = QtGui.QFont()
+		label_font.setBold(True)
+		
+		#==================== Create Controls =================
+		
+		self.xmin_label = QLabel("Lower limit:")
+		self.xmin_edit = QLineEdit()
+		self.xmin_edit.setValidator(QDoubleValidator())
+		self.xmin_edit.setText(f"{xmin}")
+		self.xmin_edit.setFixedWidth(40)
+		self.xmin_edit.editingFinished.connect(self.apply_changes)
+		
+		self.xmax_label = QLabel("Upper limit:")
+		self.xmax_edit = QLineEdit()
+		self.xmax_edit.setValidator(QDoubleValidator())
+		self.xmax_edit.setText(f"{xmax}")
+		self.xmax_edit.setFixedWidth(40)
+		self.xmax_edit.editingFinished.connect(self.apply_changes)
+		
+		self.xstep_label = QLabel("Step size:")
+		self.xstep_edit = QLineEdit()
+		self.xstep_edit.setValidator(QDoubleValidator())
+		self.xstep_edit.setText(f"{xstep}")
+		self.xstep_edit.setFixedWidth(40)
+		self.xstep_edit.editingFinished.connect(self.apply_changes)
+		
+		#==================== Create Labels ======================
+		
+		self.cp_lab = QLabel("Control Parameter:")
+		self.cp_lab.setFont(label_font)
+		self.cp_labval = QLabel(f"{self.sldr_widget.control_parameter}")
+		
+		self.unit_lab = QLabel("Units:")
+		self.unit_lab.setFont(label_font)
+		self.unit_labval = QLabel(f"{self.sldr_widget.unit_label}")
+		
+		#================ Apply to Grid ===================
+		
+		n1 = 0
+		n2 = n1+3
+		
+		self.grid = QGridLayout()
+		self.grid.addWidget(self.xmin_label, n1+0, 0)
+		self.grid.addWidget(self.xmin_edit, n1+0, 1)
+		self.grid.addWidget(self.xmax_label, n1+1, 0)
+		self.grid.addWidget(self.xmax_edit, n1+1, 1)
+		self.grid.addWidget(self.xstep_label, n1+2, 0)
+		self.grid.addWidget(self.xstep_edit, n1+2, 1)
+		
+		self.grid.addWidget(self.cp_lab, n2+0, 0, 1, 2)
+		self.grid.addWidget(self.cp_labval, n2+1, 0, 1, 2)
+		self.grid.addWidget(self.unit_lab, n2+2, 0)
+		self.grid.addWidget(self.unit_labval, n2+2, 1)
+		
+		self.setLayout(self.grid)
+	
+	def apply_changes(self):
+		
+		# Read values from UI
+		xstep = float(self.xstep_edit.text())
+		xmin = float(self.xmin_edit.text())
+		xmax = float(self.xmax_edit.text())
+		
+		# Save values to controller
+		self.sldr_widget.set_maximum(xmax)
+		self.sldr_widget.set_minimum(xmin)
+		self.sldr_widget.set_step(xstep)
+
+class BHIntegratedSliderSettingsWindow(QMainWindow):
+	
+	def __init__(self, slider_panel):
+		super().__init__()
+		
+		self.slider_panel = slider_panel
+		self.slider_dict = self.slider_panel.sliders
+		
+		self.setWindowTitle("Slider Settings")
+		self.setFixedSize(325, 325)
+		
+		self.grid = QGridLayout()
+		
+		# Create tabs
+		self.tab_bar = QTabWidget()
+		for sldr in self.slider_dict.values():
+			self.tab_bar.addTab(SliderSettingsWidget(sldr), f"Slider: {sldr.header_label_txt}")
+			
+		# Define grid
+		self.grid.addWidget(self.tab_bar, 0, 0)
+		
+		self.cw = QtWidgets.QWidget()
+		self.cw.setLayout(self.grid)
+		self.setCentralWidget(self.cw)
+
+class BHSliderPanel(QWidget):
+	
+	def __init__(self, main_window):
+		super().__init__()
+		self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Expanding)
+		
+		self.main_window = main_window
+		self.sliders = {}
+		
+		self.slider_settings_btn = QPushButton("Slider Settings", parent=self)
+		self.slider_settings_btn.setFixedSize(100, 25)
+		self.slider_settings_btn.clicked.connect(self.launch_settings_ui)
+		
+		self.slider_box = QGroupBox()
+		self.slider_box.setStyleSheet("QGroupBox{border:0;}")
+		self.slider_grid = QGridLayout()
+		self.slider_box.setLayout(self.slider_grid)
+		
+		self.btn_spacer = QSpacerItem(10, 10, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+		
+		self.grid = QGridLayout()
+		self.grid.addWidget(self.slider_box, 0, 0, 1, 2)
+		self.grid.addItem(self.btn_spacer, 1, 0)
+		self.grid.addWidget(self.slider_settings_btn, 1, 1)
+		
+		self.setLayout(self.grid)
+	
+	def launch_settings_ui(self):
+		
+		self.settings_dialog = BHIntegratedSliderSettingsWindow(self)
+		self.settings_dialog.show()
+		
+	def add_slider(self, swidget:BHSliderWidget):
+		
+		self.sliders[swidget.control_parameter] = swidget
+		
+		self.slider_grid.addWidget(swidget, 0, len(self.sliders)-1)
+	
+	def update_state(self, state):
+		
+		for k in self.sliders.keys():
+			if k in state:
+				self.sliders[k].set_slider_position(state[k])
