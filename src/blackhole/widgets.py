@@ -10,6 +10,7 @@ import pylogfile.base as plf
 import numpy as np
 import json
 import os
+import mplcursors
 
 import blackhole.base as bh
 
@@ -81,10 +82,12 @@ class BHMultiPlotWidget(bh.BHListenerWidget):
 	Y_MIN = "AXIS_YLIM_MIN"
 	Y_MAX = "AXIS_YLIM_MAX"
 	
-	def __init__(self,main_window, grid_dim:list, plot_locations:list, custom_render_func=None, include_settings_button:bool=True): #, xlabel:str="", ylabel:str="", title:str="", ):
+	def __init__(self,main_window, grid_dim:list, plot_locations:list, custom_render_func=None, include_settings_button:bool=True, enable_cursors:bool=True): #, xlabel:str="", ylabel:str="", title:str="", ):
 		super().__init__(main_window)
 		
 		self.main_window = main_window
+		
+		self.enable_cursors = enable_cursors
 		
 		#NOTE: The idea is that the main window will have a *global* BHControlState
 		# that all widgets will ahve acceess too. If you want two unrelated widgets
@@ -175,6 +178,15 @@ class BHMultiPlotWidget(bh.BHListenerWidget):
 		# Apply tight bounds and draw
 		self.fig1.tight_layout()
 		self.fig1.canvas.draw_idle()
+		
+		# Apply cursors
+		if self.enable_cursors:
+			
+			# Scan over axes
+			for ax in self.fig1.axes:
+				# Scan over lines
+				for ll in ax.lines:
+					mplcursors.cursor(ll, multiple=True, highlight=False)
 		
 		self.is_current = True
 	
@@ -515,7 +527,7 @@ class BHSliderWidget(bh.BHControllerWidget):
 		# Get actual bounds
 		min_val = self.scaled_min*self.step_size
 		max_val = self.scaled_max*self.step_size
-		slider_val = self.slider.sliderPosition()
+		slider_val = self.get_slider_position()
 		
 		# Change step size (scaling coefficient)
 		self.step_size = step_size
@@ -530,7 +542,7 @@ class BHSliderWidget(bh.BHControllerWidget):
 		
 		# Reposition slider
 		self._slider_freeze = True
-		self.set_slider_position(slider_val/self.step_size)
+		self.set_slider_position(slider_val)
 		self._slider_freeze = False
 	
 	def _update_from_typed_val(self):
@@ -562,6 +574,10 @@ class BHSliderWidget(bh.BHControllerWidget):
 	def set_slider_position(self, val:float):
 		self.log.debug(f"Setting slider position to >{val}<, index={round(val/self.step_size)}")
 		self.slider.setSliderPosition(round(val/self.step_size))
+	
+	def get_slider_position(self):
+		spos = self.slider.sliderPosition()
+		return spos*self.step_size
 	
 	def _update_val_label(self, value):
 		if self.editable_val_labels:
