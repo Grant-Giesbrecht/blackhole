@@ -215,12 +215,13 @@ class BHDataset():
 	how the data is loaded.
 	'''
 	
-	def __init__(self, log, unique_id):
+	def __init__(self, log, source_info:BHDataSource):
 		
 		# Describes the ControlState that has acted on the data
 		self.control_performed = BHControlState(log)
 		self.log = log
-		self.unique_id = unique_id
+		self.source_info = source_info
+		self.unique_id = source_info.unique_id
 
 class DataFilterLayer():
 	
@@ -428,6 +429,74 @@ class BHDatasetManager():
 		
 		return self.loaded_data[self.active_datasets[active_index]]
 
+class BHDatasetDescriptorWidget(BHWidget):
+	''' The DataManager needs to have read the config file before this is callled
+	so this widget knows what fields to add.'''
+	
+	def __init__(self, main_window):
+		super().__init__(main_window, dataset_changed_callback=self.update_descriptor)
+		self.main_window.add_dataset_subscriber(self)
+		
+		self.label_font = QtGui.QFont()
+		self.label_font.setBold(True)
+		
+		self.filename_lab = QLabel("Filename:")
+		self.filename_lab.setFont(self.label_font)
+		self.filename_val = QLabel("")
+		
+		self.path_lab = QLabel("Full Path:")
+		self.path_lab.setFont(self.label_font)
+		self.path_val = QLabel("")
+		
+		self.param_labels = {}
+		self.param_vals = {}
+		
+		# Loop over expected parameters
+		self.param_box = QGroupBox(f"File Parameters")
+		self.pb_grid = QGridLayout()
+		rownum = 0
+		for param in self.data_manager.expected_file_parameters:
+			
+			pl = QLabel(f"{param}:")
+			pl.setFont(self.label_font)
+			
+			pv = QLabel(f"")
+			
+			self.param_labels[param] = pl
+			self.param_vals[param] = pv
+			
+			# Add to grid
+			self.pb_grid.addWidget(pl, rownum, 0)
+			self.pb_grid.addWidget(pv, rownum, 1)
+			rownum += 1
+		self.param_box.setLayout(self.pb_grid)
+		
+		self.grid = QGridLayout()
+		self.grid.addWidget(self.filename_lab, 0, 0, 1, 2)
+		self.grid.addWidget(self.filename_val, 1, 0, 1, 2)
+		self.grid.addWidget(self.path_lab, 2, 0, 1, 2)
+		self.grid.addWidget(self.path_lab, 3, 0, 1, 2)
+		self.grid.addWidget(self.param_box, 4, 0, 1, 2)
+		self.setLayout(self.grid)
+	
+	@staticmethod
+	def update_descriptor( wid):
+		
+		# Get active dataset
+		ds = wid.data_manager.get_active()
+		
+		# Update fields
+		wid.filename_val.setText(ds.source_info.file_name)
+		wid.path_val.setText(ds.source_info.file_fullpath)
+		
+		# Update each parameter in turn
+		for param in wid.data_manager.expected_file_parameters:
+			param_val = ds.source_info.parameters[param]
+			try:
+				wid.param_vals[param].setText(f"{param_val}")
+			except Exception as e:
+				wid.log.error(f"Failed to convert parameter to string.",detail=f"{e}")
+				wid.param_vals[param].setText(f"??")
 
 class BHDatasetSelectBasicWidget(QWidget):
 	
@@ -446,8 +515,15 @@ class BHDatasetSelectBasicWidget(QWidget):
 		self.select_widget.setFixedSize(QSize(200, 100))
 		self.select_widget.itemClicked.connect(self.change_file)
 		
+		self.hspacer = QSpacerItem(10, 10, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+		
+		# Descriptor widget
+		self.descriptor_widget = BHDatasetDescriptorWidget(self.main_window)
+		
 		# Apply layout
 		self.grid.addWidget(self.select_widget, 0, 0)
+		self.grid.addItem(self.hspacer, 0, 1)
+		self.grid.addWidget(self.descriptor_widget, 0, 2)
 		self.setLayout(self.grid)
 
 		self.update_list()
