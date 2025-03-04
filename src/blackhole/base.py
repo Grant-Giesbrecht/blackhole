@@ -10,6 +10,7 @@ import json
 import os
 import sys
 import pyperclip
+import time 
 
 log = plf.LogPile()
 log.set_terminal_level("DEBUG")
@@ -42,6 +43,9 @@ def apply_abbreviations(path:list, abbrevs:dict):
 
 def expand_path_list(path:list, abbrevs:dict):
 	''' Applies abbreviations and joins path elements.'''
+	
+	if not isinstance(path, list):
+		return path
 	
 	npath = apply_abbreviations(path, abbrevs)
 	return os.path.join(*npath)
@@ -304,6 +308,10 @@ class BHDatasetManager():
 				raise Exception(f"Either filename or filepath must be specified.")
 			filename = expand_path_list(filepath, user_abbrevs)
 		
+		# Save to log
+		t0 = time.time()
+		self.log.info(f"Loading configuration file >{filename}<.", detail=f"user_abbrevs = {user_abbrevs}")
+		
 		# Load json file
 		try:
 			with open(filename, 'r') as fh:
@@ -382,6 +390,9 @@ class BHDatasetManager():
 			if found != 1:
 				self.log.critical(f"BHDatasetManager configuration file has {found} layers at level {i}. Must be exactly 1.")
 				return False
+		
+		
+		self.log.debug(f"Configuration file loaded in >:q{time.time()-t0}< seconds.", detail=f"Abbreviation list: {self.abbrevs}")
 		
 		return True
 	
