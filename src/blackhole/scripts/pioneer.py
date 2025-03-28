@@ -68,9 +68,9 @@ def import_function_from_path(file_path, function_name):
 		print(f"Error: Function '{function_name}' not found in {file_path}")
 		return None
 
-fn = import_function_from_path(args.filename, "main")
+main_fn = import_function_from_path(args.filename, "main")
 
-if fn is None:
+if main_fn is None:
 	print(f"Error: Failed to retrieve function from specified file.")
 	sys.exit()
 
@@ -87,7 +87,7 @@ class PioneerMainWindow(bh.BHMainWindow):
 	def __init__(self, log, app, data_manager):
 		super().__init__(log, app, data_manager, window_title="Black Hole: Pioneer")
 		
-		self.analyzer_widget = bhw.FileAnalyzerWidget(self)
+		self.analyzer_widget = bhw.FileAnalyzerWidget(self, main_fn)
 		
 		# Make grid
 		self.main_grid = QGridLayout()

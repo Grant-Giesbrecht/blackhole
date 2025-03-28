@@ -3,7 +3,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas,
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 from PyQt6.QtGui import QAction, QActionGroup, QDoubleValidator, QIcon, QFontDatabase, QFont, QPixmap
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import Qt, QSize, QObject, pyqtSignal, QThread
 from PyQt6.QtWidgets import QWidget, QTabWidget, QLabel, QGridLayout, QLineEdit, QCheckBox, QSpacerItem, QSizePolicy, QMainWindow, QSlider, QPushButton, QGroupBox, QListWidget, QFileDialog, QProgressBar, QStatusBar
 from abc import abstractmethod
 import pylogfile.base as plf
@@ -762,18 +762,85 @@ class BHSliderPanel(QWidget):
 			if k in state:
 				self.sliders[k].set_slider_position(state[k])
 
-class FileAnalyzerWidget(QWidget):
+class FileAnalyzerWorker(QObject):
+	
+	finished = pyqtSignal(str)
+	progress = pyqtSignal(int)
+	
+	def __init__(self, analysis_function, file):
+		super().__init__()
+		
+		self.file = file
+		self.analysis_function = analysis_function
+		self.figs = []
+		
+	def run(self):
+		
+		# Analyze the file
+		try:
+			self.figs = self.analysis_function(self.file)
+		except Exception as e:
+			self.main_window.log.error(f"An error occurred while analyzing the file >{self.file}<.", detail=f"{e}")
+			self.finished.emit(f"Failed. ({e})")
+		
+		self.finished.emit(f"Success")
+
+class FileAnalyzerFileTab(bh.BHListenerWidget):
+	
+	def __init__(self, main_window, analysis_function, file):
+		super().__init__(main_window=main_window)
+		
+		self.main_window = main_window
+		self.analysis_function = analysis_function
+		self.file = file
+		
+		self.fig_tabs = bh.BHTabWidget(self.main_window)
+		
+		self.status_label = QLabel(f"Task status: Idle")
+		
+		self.grid = QGridLayout()
+		self.grid.addWidget(self.fig_tabs, 0, 0)
+		self.grid.addWidget(self.status_label, 1, 0)
+		self.setLayout(self.grid)
+	
+	def analyze(self):
+		
+		if self.thread is None:
+			
+			# Prepare thread and worker
+			self.thread = QThread()
+			self.worker = FileAnalyzerWorker(self.analysis_function, self.file)
+			self.worker.moveToThread(self.thread)
+			self.worker.finished.connect(self.on_finished)
+			self.thread.started.connect(self.worker.run)
+			
+			self.label.setText("Task Status: Running...")
+			
+			# Start thread
+			self.thread.start()
+	
+	def on_finished(self, message:str):
+		
+		self.label.setText(f"Task Status: finished. [{message}].")
+		
+		self.thread.quit()
+		self.thread.wait()
+		self.thead = None
+		self.worker = None
+
+class FileAnalyzerWidget(bh.BHListenerWidget):
 	''' This widget was developed for the script Pioneer, but is more broadly
 	useful. It just accepts files to be dragged and dropped in, and they will
 	be fed to a specified function to be processed. The function will return plots
 	which will be displayed as various tabs.
 	'''
 	
-	def __init__(self, main_window):
-		super().__init__()
+	def __init__(self, main_window, analysis_function:callable):
+		super().__init__(main_window)
 		
 		self.main_window = main_window
 		self.setAcceptDrops(True) # Enable files to be dropped in
+		self.analysis_function = analysis_function
 		
 		# Create tab for each file
 		self.file_tab_widget = bh.BHTabWidget(self.main_window)
@@ -782,6 +849,20 @@ class FileAnalyzerWidget(QWidget):
 		self.grid = QGridLayout()
 		self.grid.addWidget(self.file_tab_widget, 0, 0)
 		self.setLayout(self.grid)
+	
+	def analyze_file(self, file):
+		
+		# # Analyze the file
+		# try:
+		# 	figs = self.analysis_function(file)
+		# except Exception as e:
+		# 	self.main_window.log.error(f"An error occurred while analyzing the file >{file}<.", detail=f"{e}")
+		
+		# Create new tab object - this handles creating a new thread to do the analysis in.
+		new_tab = FileAnalyzerFileTab(self.main_window, self.analysis_function, file)
+		
+		# Add to tab widget
+		self.file_tab_widget.addTab(new_tab, f"{file}")
 	
 	def dragEnterEvent(self, event):
 		if event.mimeData().hasUrls():
@@ -792,5 +873,6 @@ class FileAnalyzerWidget(QWidget):
 	def dropEvent(self, event):
 		files = [url.toLocalFile() for url in event.mimeData().urls()]
 		for f in files:
-			print("Dropped file:", f)
-			# Process the file here, e.g., open, read, etc.
+			self.main_window.log.info(f"File >{f}< dropped into FileAnalyzerWidget with analysis function >{self.analysis_function}<.")
+			
+			self.analyze_file(f)
