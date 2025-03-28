@@ -70,28 +70,9 @@ def import_function_from_path(file_path, function_name):
 		print(f"Error: Function '{function_name}' not found in {file_path}")
 		return None
 
-analysis_fn = import_function_from_path(args.filename, args.afunc)
-plot_fn = import_function_from_path(args.filename, args.pfunc)
-
-
-if plot_fn is None:
-	print(f"Error: Failed to retrieve function >{args.pfunc}< from specified file, >{args.filename}<.")
-	sys.exit()
-if analysis_fn is None:
-	print(f"Error: Failed to retrieve function >{args.afunc}< from specified file, >{args.filename}<.")
-	sys.exit()
-
-# Create app object
-app = QtWidgets.QApplication(sys.argv)
-app.setStyle(f"Fusion")
-# app.setWindowIcon
-
-def void_fn():
-	pass
-
 class PioneerMainWindow(bh.BHMainWindow):
 	
-	def __init__(self, log, app, data_manager):
+	def __init__(self, log, app, data_manager, plot_fn:callable, analysis_fn:callable):
 		super().__init__(log, app, data_manager, window_title="Black Hole: Pioneer")
 		
 		self.setMinimumSize(500, 500)
@@ -110,10 +91,30 @@ class PioneerMainWindow(bh.BHMainWindow):
 		self.add_basic_menu_bar()
 		
 		self.show()
+
+def main():
+	
+	analysis_fn = import_function_from_path(args.filename, args.afunc)
+	plot_fn = import_function_from_path(args.filename, args.pfunc)
+
+	if plot_fn is None:
+		print(f"Error: Failed to retrieve function >{args.pfunc}< from specified file, >{args.filename}<.")
+		sys.exit()
+	if analysis_fn is None:
+		print(f"Warning: No analysis function >{args.afunc}< detected in specified file, >{args.filename}<. Skipping.")
 		
-# Create Data Manager - it won't be used
-data_manager = bh.BHDatasetManager(log, load_function=void_fn)
 
-window = PioneerMainWindow(log, app, data_manager)
+	# Create app object
+	app = QtWidgets.QApplication(sys.argv)
+	app.setStyle(f"Fusion")
+	# app.setWindowIcon
 
-app.exec()
+	def void_fn():
+		pass
+	
+	# Create Data Manager - it won't be used
+	data_manager = bh.BHDatasetManager(log, load_function=void_fn)
+
+	window = PioneerMainWindow(log, app, data_manager, plot_fn, analysis_fn)
+
+	app.exec()
