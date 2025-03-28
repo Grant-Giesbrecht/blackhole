@@ -818,6 +818,7 @@ class FileAnalyzerFileTab(bh.BHListenerWidget):
 		self.figs = []
 		self.canvases = []
 		self.toolbars = []
+		self.combined = []
 	
 	def plot(self):
 		''' This runs in the main thread and can safely run matplotlib GUI calls
@@ -843,11 +844,18 @@ class FileAnalyzerFileTab(bh.BHListenerWidget):
 			self.canvases.append(FigureCanvas(f))
 			self.toolbars.append(NavigationToolbar2QT(self.canvases[-1], self))
 			
+			combo = QWidget()
+			subgrid = QGridLayout()
+			subgrid.addWidget(self.toolbars[-1], 0, 0)
+			subgrid.addWidget(self.canvases[-1], 1, 0)
+			combo.setLayout(subgrid)
+			self.combined.append(combo)
+			
 			# Get tab name
 			fig_name = f"Figure {f.number}"
 			
 			# Add to tab
-			self.fig_tabs.addTab(self.canvases[-1], fig_name)
+			self.fig_tabs.addTab(combo, fig_name)
 	
 	def process(self):
 		''' Runs the analysis (in second thread, only if 2nd function given) and

@@ -94,6 +94,8 @@ class PioneerMainWindow(bh.BHMainWindow):
 	def __init__(self, log, app, data_manager):
 		super().__init__(log, app, data_manager, window_title="Black Hole: Pioneer")
 		
+		self.setMinimumSize(500, 500)
+		
 		self.analyzer_widget = bhw.FileAnalyzerWidget(self, plot_fn, analysis_fn)
 		
 		# Make grid
