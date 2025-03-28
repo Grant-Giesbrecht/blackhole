@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import ctypes
 import sys
 import importlib.util
 import os
@@ -10,6 +11,7 @@ from itertools import groupby, count, filterfalse
 import dataclasses
 import json
 
+from PyQt6.QtGui import QIcon
 from PyQt6 import QtCore, QtGui, QtWidgets
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtWidgets import QWidget, QTabWidget, QLabel, QGridLayout, QLineEdit, QCheckBox, QSpacerItem, QSizePolicy, QMainWindow, QSlider, QPushButton, QGroupBox, QListWidget, QFileDialog, QProgressBar, QStatusBar
@@ -29,7 +31,6 @@ parser.add_argument('-d', '--detail', help="Show log details.", action='store_tr
 parser.add_argument('-a', '--afunc', help="Specify name of the analysis function.", default="analyze")
 parser.add_argument('-p', '--pfunc', help="Specify name of the main/plotting function.", default="main")
 args = parser.parse_args()
-
 # Initialize log
 log = plf.LogPile()
 if args.loglevel is not None:
@@ -38,6 +39,20 @@ if args.loglevel is not None:
 else:
 	log.set_terminal_level("DEBUG")
 log.str_format.show_detail = args.detail
+
+try:
+	
+	# Requires Python >= 3.9
+	import importlib.resources
+	mod_path = importlib.resources.files("blackhole")
+	logo_file = (mod_path / 'scripts' / 'assets' / 'bhsmall.png')
+except AttributeError as e:
+	logo_file = None
+	print(f"{Fore.LIGHTRED_EX}Upgrade to Python >= 3.9 for access to importlib and CLI help data. ({e})")
+except Exception as e:
+	logo_file = None
+	print(__name__)
+	print(f"{Fore.LIGHTRED_EX}An error occured. ({e}){Style.RESET_ALL}")
 
 def import_function_from_path(file_path, function_name):
 	"""
@@ -96,19 +111,20 @@ def main():
 	
 	analysis_fn = import_function_from_path(args.filename, args.afunc)
 	plot_fn = import_function_from_path(args.filename, args.pfunc)
-
+	
 	if plot_fn is None:
-		print(f"Error: Failed to retrieve function >{args.pfunc}< from specified file, >{args.filename}<.")
+		log.error(f"Failed to retrieve function >{args.pfunc}< from specified file, >{args.filename}<.")
 		sys.exit()
 	if analysis_fn is None:
-		print(f"Warning: No analysis function >{args.afunc}< detected in specified file, >{args.filename}<. Skipping.")
-		
-
+		log.warning(f"No analysis function >{args.afunc}< detected in specified file, >{args.filename}<. Skipping.")
+	
 	# Create app object
 	app = QtWidgets.QApplication(sys.argv)
 	app.setStyle(f"Fusion")
-	# app.setWindowIcon
-
+	if logo_file is not None:
+		small_logo = QIcon(str(logo_file))
+		app.setWindowIcon(small_logo)
+	
 	def void_fn():
 		pass
 	
@@ -116,5 +132,6 @@ def main():
 	data_manager = bh.BHDatasetManager(log, load_function=void_fn)
 
 	window = PioneerMainWindow(log, app, data_manager, plot_fn, analysis_fn)
+
 
 	app.exec()

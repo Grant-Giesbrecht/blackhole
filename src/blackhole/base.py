@@ -10,7 +10,9 @@ import json
 import os
 import sys
 import pyperclip
-import time 
+import time
+from sys import platform
+import ctypes
 
 log = plf.LogPile()
 log.set_terminal_level("DEBUG")
@@ -645,8 +647,16 @@ class BHMainWindow(QtWidgets.QMainWindow):
 		#------------- Make GUI elements ------------------
 		
 		# Apply window title if specified
-		if window_title is not None:
-			self.setWindowTitle(window_title)
+		self.window_title = window_title
+		if window_title is None:
+			self.window_title = "Blackhole GUI"
+		self.setWindowTitle(self.window_title)
+		
+		if platform == "win32":
+			# Manually override app ID to tell windows to use the Window Icon in the taskbar
+			myappid = f'blackhole.{self.window_title}.main.v0' # arbitrary string
+			self.log.lowdebug(f"Setting app-id to >:q{myappid}<.")
+			ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 		
 		# Create basic GUI parameters
 		self.grid = QtWidgets.QGridLayout()
@@ -655,7 +665,7 @@ class BHMainWindow(QtWidgets.QMainWindow):
 		central_widget = QtWidgets.QWidget()
 		central_widget.setLayout(self.grid)
 		self.setCentralWidget(central_widget)
-		
+	
 	def add_control_subscriber(self, widget:BHListenerWidget):
 		''' Adds a controlled widget to the subscribers list. These widgets 
 		will be informed when a change has been made to the control state. '''
