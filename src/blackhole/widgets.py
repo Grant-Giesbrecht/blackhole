@@ -761,3 +761,36 @@ class BHSliderPanel(QWidget):
 		for k in self.sliders.keys():
 			if k in state:
 				self.sliders[k].set_slider_position(state[k])
+
+class FileAnalyzerWidget(QWidget):
+	''' This widget was developed for the script Pioneer, but is more broadly
+	useful. It just accepts files to be dragged and dropped in, and they will
+	be fed to a specified function to be processed. The function will return plots
+	which will be displayed as various tabs.
+	'''
+	
+	def __init__(self, main_window):
+		super().__init__()
+		
+		self.main_window = main_window
+		self.setAcceptDrops(True) # Enable files to be dropped in
+		
+		# Create tab for each file
+		self.file_tab_widget = bh.BHTabWidget(self.main_window)
+		
+		# Specify layout
+		self.grid = QGridLayout()
+		self.grid.addWidget(self.file_tab_widget, 0, 0)
+		self.setLayout(self.grid)
+	
+	def dragEnterEvent(self, event):
+		if event.mimeData().hasUrls():
+			event.accept()
+		else:
+			event.ignore()
+	
+	def dropEvent(self, event):
+		files = [url.toLocalFile() for url in event.mimeData().urls()]
+		for f in files:
+			print("Dropped file:", f)
+			# Process the file here, e.g., open, read, etc.

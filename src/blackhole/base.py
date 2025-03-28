@@ -702,6 +702,11 @@ class BHMainWindow(QtWidgets.QMainWindow):
 		self.close_window_act.triggered.connect(self._basic_menu_close)
 		self.file_menu.addAction(self.close_window_act)
 		
+		self.view_log_act = QAction("View Log", self)
+		self.view_log_act.setShortcut("Shift+L")
+		self.view_log_act.triggered.connect(self._basic_menu_view_log)
+		self.file_menu.addAction(self.view_log_act)
+		
 		#----------------- Edit Menu ----------------
 		
 		self.edit_menu = self.bar.addMenu("Edit")
@@ -721,6 +726,10 @@ class BHMainWindow(QtWidgets.QMainWindow):
 
 		self.close()
 		sys.exit(0)
+	
+	def _basic_menu_view_log(self):
+		self.log.error(f"Log viewing not implemented.")
+		pass
 	
 	def _basic_menu_refresh(self):
 
