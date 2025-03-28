@@ -764,7 +764,7 @@ class BHSliderPanel(QWidget):
 
 class FileAnalyzerWorker(QObject):
 	
-	finished = pyqtSignal(str)
+	finished = pyqtSignal(str, dict)
 	progress = pyqtSignal(int)
 	
 	def __init__(self, analysis_function, file):
@@ -772,29 +772,37 @@ class FileAnalyzerWorker(QObject):
 		
 		self.file = file
 		self.analysis_function = analysis_function
-		self.figs = []
+		self.data = {}
+		self.msg = ""
 		
 	def run(self):
 		
 		# Analyze the file
 		try:
-			self.figs = self.analysis_function(self.file)
+			self.msg, self.data = self.analysis_function(self.file)
+			print(self.data)
 		except Exception as e:
 			self.main_window.log.error(f"An error occurred while analyzing the file >{self.file}<.", detail=f"{e}")
-			self.finished.emit(f"Failed. ({e})")
+			self.finished.emit(f"Failed ({self.msg}). ({e})", {})
+			return
 		
-		self.finished.emit(f"Success")
+		if not isinstance(self.data, dict):
+			self.finished.emit(f"Failed ({self.msg}). Provided function returned None.",{})
+			return
+		
+		self.finished.emit(f"Success ({self.msg})", self.data)
 
 class FileAnalyzerFileTab(bh.BHListenerWidget):
 	
-	def __init__(self, main_window, analysis_function, file):
+	def __init__(self, main_window, plot_function, analysis_function, file):
 		super().__init__(main_window=main_window)
 		
 		self.main_window = main_window
 		self.analysis_function = analysis_function
+		self.plot_function = plot_function
 		self.file = file
 		
-		self.fig_tabs = bh.BHTabWidget(self.main_window)
+		self.fig_tabs = QTabWidget(self.main_window)
 		
 		self.status_label = QLabel(f"Task status: Idle")
 		
@@ -802,31 +810,92 @@ class FileAnalyzerFileTab(bh.BHListenerWidget):
 		self.grid.addWidget(self.fig_tabs, 0, 0)
 		self.grid.addWidget(self.status_label, 1, 0)
 		self.setLayout(self.grid)
-	
-	def analyze(self):
 		
+		self.thread = None
+		self.worker = None
+		
+		self.data = {}
+		self.figs = []
+		self.canvases = []
+		self.toolbars = []
+	
+	def plot(self):
+		''' This runs in the main thread and can safely run matplotlib GUI calls
+		(and of course anythign else).'''
+		
+		# Run plot function in main thread. Will return a list of figures
+		try:
+			self.main_window.log.debug(f"Running plot function.", detail=f"data={self.data}")
+			self.figs = self.plot_function(self.data, self.file)
+		except Exception as e:
+			self.main_window.log.error(f"Plot function encountered an error.", detail=f"{e}")
+			return
+		
+		# Check for bad return
+		if self.figs is None:
+			self.main_window.log.error(f"Plot function returned None.")
+			return
+		
+		# Make a new tab for each figure 
+		for f in self.figs:
+			
+			# Create GUI plot
+			self.canvases.append(FigureCanvas(f))
+			self.toolbars.append(NavigationToolbar2QT(self.canvases[-1], self))
+			
+			# Get tab name
+			fig_name = f"Figure {f.number}"
+			
+			# Add to tab
+			self.fig_tabs.addTab(self.canvases[-1], fig_name)
+	
+	def process(self):
+		''' Runs the analysis (in second thread, only if 2nd function given) and
+		plot (in main thread) as soon as possible.
+		'''
+		
+		# Check if user wants to skip parallel phase
+		if self.analysis_function is None:
+			self.main_window.log.debug("Skipping parallel phase. No analysis function provided.")
+			
+			# Run plot immediately
+			self.plot()
+			return
+		
+		self.main_window.log.debug("Preparing to launch analysis thread...")
+		
+		# Otherwise launch thread
 		if self.thread is None:
 			
 			# Prepare thread and worker
 			self.thread = QThread()
 			self.worker = FileAnalyzerWorker(self.analysis_function, self.file)
 			self.worker.moveToThread(self.thread)
-			self.worker.finished.connect(self.on_finished)
+			self.worker.finished.connect(self.analysis_finished)
 			self.thread.started.connect(self.worker.run)
 			
-			self.label.setText("Task Status: Running...")
+			self.main_window.log.debug(f"Beginning thread to analyze file >{self.file}<")
+			self.status_label.setText("Task Status: Running...")
 			
 			# Start thread
 			self.thread.start()
 	
-	def on_finished(self, message:str):
+	def analysis_finished(self, message:str, data:dict):
 		
-		self.label.setText(f"Task Status: finished. [{message}].")
+		self.data = data
+		
+		self.main_window.log.debug(f"Thread finished.", detail=f"Received data={self.data}")
+		
+		self.status_label.setText(f"Task Status: finished. [{message}].")
+		
+		# self.toolbars.append(NavigationToolbar2QT(self.canvases[-1], ))
 		
 		self.thread.quit()
 		self.thread.wait()
 		self.thead = None
 		self.worker = None
+		
+		self.plot()
 
 class FileAnalyzerWidget(bh.BHListenerWidget):
 	''' This widget was developed for the script Pioneer, but is more broadly
@@ -835,11 +904,12 @@ class FileAnalyzerWidget(bh.BHListenerWidget):
 	which will be displayed as various tabs.
 	'''
 	
-	def __init__(self, main_window, analysis_function:callable):
+	def __init__(self, main_window, plot_function:callable, analysis_function:callable):
 		super().__init__(main_window)
 		
 		self.main_window = main_window
 		self.setAcceptDrops(True) # Enable files to be dropped in
+		self.plot_function = plot_function
 		self.analysis_function = analysis_function
 		
 		# Create tab for each file
@@ -850,19 +920,20 @@ class FileAnalyzerWidget(bh.BHListenerWidget):
 		self.grid.addWidget(self.file_tab_widget, 0, 0)
 		self.setLayout(self.grid)
 	
+	def abbrev_filename(self, filename:str):
+		''' This function can be overridden if you want to change how filenames
+		are handled when naming tabs.'''
+		
+		return os.path.basename(filename)
+	
 	def analyze_file(self, file):
 		
-		# # Analyze the file
-		# try:
-		# 	figs = self.analysis_function(file)
-		# except Exception as e:
-		# 	self.main_window.log.error(f"An error occurred while analyzing the file >{file}<.", detail=f"{e}")
-		
 		# Create new tab object - this handles creating a new thread to do the analysis in.
-		new_tab = FileAnalyzerFileTab(self.main_window, self.analysis_function, file)
+		new_tab = FileAnalyzerFileTab(self.main_window, self.plot_function, self.analysis_function, file)
+		new_tab.process()
 		
 		# Add to tab widget
-		self.file_tab_widget.addTab(new_tab, f"{file}")
+		self.file_tab_widget.addTab(new_tab, self.abbrev_filename(file))
 	
 	def dragEnterEvent(self, event):
 		if event.mimeData().hasUrls():

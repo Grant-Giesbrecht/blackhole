@@ -26,6 +26,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument('filename')
 parser.add_argument('--loglevel', help="Set the logging display level.", choices=['LOWDEBUG', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'], type=str.upper)
 parser.add_argument('-d', '--detail', help="Show log details.", action='store_true')
+parser.add_argument('-a', '--afunc', help="Specify name of the analysis function.", default="analyze")
+parser.add_argument('-p', '--pfunc', help="Specify name of the main/plotting function.", default="main")
 args = parser.parse_args()
 
 # Initialize log
@@ -68,10 +70,15 @@ def import_function_from_path(file_path, function_name):
 		print(f"Error: Function '{function_name}' not found in {file_path}")
 		return None
 
-main_fn = import_function_from_path(args.filename, "main")
+analysis_fn = import_function_from_path(args.filename, args.afunc)
+plot_fn = import_function_from_path(args.filename, args.pfunc)
 
-if main_fn is None:
-	print(f"Error: Failed to retrieve function from specified file.")
+
+if plot_fn is None:
+	print(f"Error: Failed to retrieve function >{args.pfunc}< from specified file, >{args.filename}<.")
+	sys.exit()
+if analysis_fn is None:
+	print(f"Error: Failed to retrieve function >{args.afunc}< from specified file, >{args.filename}<.")
 	sys.exit()
 
 # Create app object
@@ -87,7 +94,7 @@ class PioneerMainWindow(bh.BHMainWindow):
 	def __init__(self, log, app, data_manager):
 		super().__init__(log, app, data_manager, window_title="Black Hole: Pioneer")
 		
-		self.analyzer_widget = bhw.FileAnalyzerWidget(self, main_fn)
+		self.analyzer_widget = bhw.FileAnalyzerWidget(self, plot_fn, analysis_fn)
 		
 		# Make grid
 		self.main_grid = QGridLayout()
@@ -97,6 +104,8 @@ class PioneerMainWindow(bh.BHMainWindow):
 		self.central_widget = QtWidgets.QWidget()
 		self.central_widget.setLayout(self.main_grid)
 		self.setCentralWidget(self.central_widget)
+		
+		self.add_basic_menu_bar()
 		
 		self.show()
 		
