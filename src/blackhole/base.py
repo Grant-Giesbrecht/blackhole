@@ -176,6 +176,30 @@ class BHTabWidget(QTabWidget):
 		
 		self.main_window = main_window
 		self.currentChanged.connect(self.update_active_widget)
+		
+		self._is_active = True
+		
+	def is_active(self):
+		return self._is_active
+	
+	def set_active(self, b:bool):
+		''' Sets the widget as active or inactive '''
+		self._is_active = b
+		
+		# Loop over all tabs
+		idx = 0
+		while True:
+			
+			# Get widget, break when out of range
+			wid = self.widget(idx)
+			if wid is None:
+				break
+			
+			# Set active status
+			wid.set_active(b)
+			
+			# Update index
+			idx += 1
 	
 	def update_active_widget(self):
 		
