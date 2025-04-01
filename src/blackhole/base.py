@@ -10,7 +10,9 @@ import json
 import os
 import sys
 import pyperclip
-import time 
+import time
+from sys import platform
+import ctypes
 
 log = plf.LogPile()
 log.set_terminal_level("DEBUG")
@@ -174,6 +176,30 @@ class BHTabWidget(QTabWidget):
 		
 		self.main_window = main_window
 		self.currentChanged.connect(self.update_active_widget)
+		
+		self._is_active = True
+		
+	def is_active(self):
+		return self._is_active
+	
+	def set_active(self, b:bool):
+		''' Sets the widget as active or inactive '''
+		self._is_active = b
+		
+		# Loop over all tabs
+		idx = 0
+		while True:
+			
+			# Get widget, break when out of range
+			wid = self.widget(idx)
+			if wid is None:
+				break
+			
+			# Set active status
+			wid.set_active(b)
+			
+			# Update index
+			idx += 1
 	
 	def update_active_widget(self):
 		
@@ -665,8 +691,16 @@ class BHMainWindow(QtWidgets.QMainWindow):
 		#------------- Make GUI elements ------------------
 		
 		# Apply window title if specified
-		if window_title is not None:
-			self.setWindowTitle(window_title)
+		self.window_title = window_title
+		if window_title is None:
+			self.window_title = "Blackhole GUI"
+		self.setWindowTitle(self.window_title)
+		
+		if platform == "win32":
+			# Manually override app ID to tell windows to use the Window Icon in the taskbar
+			myappid = f'blackhole.{self.window_title}.main.v0' # arbitrary string
+			self.log.lowdebug(f"Setting app-id to >:q{myappid}<.")
+			ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 		
 		# Create basic GUI parameters
 		self.grid = QtWidgets.QGridLayout()
@@ -675,7 +709,7 @@ class BHMainWindow(QtWidgets.QMainWindow):
 		central_widget = QtWidgets.QWidget()
 		central_widget.setLayout(self.grid)
 		self.setCentralWidget(central_widget)
-		
+	
 	def add_control_subscriber(self, widget:BHListenerWidget):
 		''' Adds a controlled widget to the subscribers list. These widgets 
 		will be informed when a change has been made to the control state. '''
@@ -722,6 +756,11 @@ class BHMainWindow(QtWidgets.QMainWindow):
 		self.close_window_act.triggered.connect(self._basic_menu_close)
 		self.file_menu.addAction(self.close_window_act)
 		
+		self.view_log_act = QAction("View Log", self)
+		self.view_log_act.setShortcut("Shift+L")
+		self.view_log_act.triggered.connect(self._basic_menu_view_log)
+		self.file_menu.addAction(self.view_log_act)
+		
 		#----------------- Edit Menu ----------------
 		
 		self.edit_menu = self.bar.addMenu("Edit")
@@ -741,6 +780,10 @@ class BHMainWindow(QtWidgets.QMainWindow):
 
 		self.close()
 		sys.exit(0)
+	
+	def _basic_menu_view_log(self):
+		self.log.error(f"Log viewing not implemented.")
+		pass
 	
 	def _basic_menu_refresh(self):
 
