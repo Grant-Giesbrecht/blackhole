@@ -202,10 +202,12 @@ class BHDataSource():
 	data, and parameters/conditions for the data. It does not contain
 	the actual data itself.'''
 	
-	def __init__(self, filename:str, params:dict, valid_idx, unique_id):
+	def __init__(self, filename:str, params:dict, options:dict, valid_idx, unique_id, notes:str=""):
 		self.file_fullpath = filename
 		self.file_name = os.path.basename(filename)
 		self.parameters = params
+		self.options = options
+		self.notes = notes
 		self.valid_active_set_indices = []
 		
 		self.unique_id = unique_id
@@ -346,9 +348,10 @@ class BHDatasetManager():
 					self.log.critical(f"Failed to load BHDatasetManager configuration file >data_sources< section.", detail=f"Exception=({e}), filepath = {fp}, abbrevs = {self.abbrevs}")
 					return False
 				
-				# Initialize parameters
+				# Initialize parameters and options
 				if first_iter:
 					self.expected_file_parameters = list(srcdict['parameters'].keys())
+					self.expected_file_options = list(srcdict['options'].keys())
 					
 				# Read all parameters
 				params = {}
@@ -361,9 +364,26 @@ class BHDatasetManager():
 					
 					params[efp] = srcdict['parameters'][efp]
 				
+				# Read all options
+				options = {}
+				for efp in self.expected_file_options:
+					
+					# Check for missing options
+					if efp not in srcdict['options']:
+						self.log.critical(f"Option >{efp}< missing for data_source No. {idx} (File={file}).")
+						return False
+					
+					options[efp] = srcdict['options'][efp]
+				
+				try:
+					note_str = srcdict['notes']
+				except Exception as e:
+					self.log.critical(f"Failed to read notes for data_source No. {idx} (File={file}).")
+					return False
+				
 				# Save BHDataSource
 				self.log.lowdebug(f"Adding BHDataSource from file: >:a{file}<")
-				self.sources_info.append( BHDataSource(file, params, srcdict['valid_active_set_indices'], next_unique_id) )
+				self.sources_info.append( BHDataSource(file, params, options, srcdict['valid_active_set_indices'], next_unique_id, notes=note_str) )
 				next_unique_id += 1
 				
 		except Exception as e:

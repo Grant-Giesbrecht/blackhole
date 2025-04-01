@@ -258,14 +258,14 @@ class AxesConfigWidget(QWidget):
 		self.xmin_edit = QLineEdit()
 		self.xmin_edit.setValidator(QDoubleValidator())
 		self.xmin_edit.setText(f"{xmin}")
-		self.xmin_edit.setFixedWidth(40)
+		self.xmin_edit.setFixedWidth(80)
 		self.xmin_edit.editingFinished.connect(self.apply_changes)
 		
 		self.xmax_label = QLabel("X-Limit, High:")
 		self.xmax_edit = QLineEdit()
 		self.xmax_edit.setValidator(QDoubleValidator())
 		self.xmax_edit.setText(f"{xmax}")
-		self.xmax_edit.setFixedWidth(40)
+		self.xmax_edit.setFixedWidth(80)
 		self.xmax_edit.editingFinished.connect(self.apply_changes)
 		
 		self.yauto_cb = QCheckBox("Auto Y-Limits")
@@ -276,14 +276,14 @@ class AxesConfigWidget(QWidget):
 		self.ymin_edit = QLineEdit()
 		self.ymin_edit.setValidator(QDoubleValidator())
 		self.ymin_edit.setText(f"{ymin}")
-		self.ymin_edit.setFixedWidth(40)
+		self.ymin_edit.setFixedWidth(80)
 		self.ymin_edit.editingFinished.connect(self.apply_changes)
 		
 		self.ymax_label = QLabel("Y-Limit, High:")
 		self.ymax_edit = QLineEdit()
 		self.ymax_edit.setValidator(QDoubleValidator())
 		self.ymax_edit.setText(f"{ymax}")
-		self.ymax_edit.setFixedWidth(40)
+		self.ymax_edit.setFixedWidth(80)
 		self.ymax_edit.editingFinished.connect(self.apply_changes)
 		
 		#==================== Create Labels ======================
