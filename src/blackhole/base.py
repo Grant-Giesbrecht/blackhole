@@ -354,7 +354,7 @@ class BHDatasetManager():
 				short = ab['shortcut']
 				val = ab['expanded']
 				self.abbrevs[short] = val
-				self.log.lowdebug(f"Adding abbreviation from file: >:a{short}< -\> >{val}<")
+				self.log.lowdebug(f"Adding abbreviation from file: >:a{short}< -\\> >{val}<")
 		except Exception as e:
 			self.log.critical(f"Failed to load BHDatasetManager configuration file >dir_abbrev< section.", detail=f"{e}")
 			return False
